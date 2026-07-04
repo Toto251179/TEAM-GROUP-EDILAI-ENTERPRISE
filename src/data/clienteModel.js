@@ -1,0 +1,15 @@
+export const nuovoCliente = {
+  ragioneSociale: "",
+  partitaIva: "",
+  codiceFiscale: "",
+  indirizzo: "",
+  cap: "",
+  comune: "",
+  provincia: "",
+  telefono: "",
+  email: "",
+  pec: "",
+  sdi: "",
+  referente: "",
+  note: "",
+};
