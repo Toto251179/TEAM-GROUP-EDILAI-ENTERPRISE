@@ -1,10 +1,24 @@
-import MainLayout from "./components/Layout/MainLayout";
-import AppRouter from "./router/AppRouter";
+import { BrowserRouter } from "react-router-dom";
+import Header from "./components/Header.jsx";
+import Sidebar from "./components/Sidebar.jsx";
+import AppRouter from "./router/AppRouter.jsx";
 
-export default function App() {
+function App() {
   return (
-    <MainLayout>
-      <AppRouter />
-    </MainLayout>
+    <BrowserRouter>
+      <div className="enterprise-shell">
+        <Sidebar />
+
+        <div className="enterprise-workspace">
+          <Header />
+
+          <main className="enterprise-main">
+            <AppRouter />
+          </main>
+        </div>
+      </div>
+    </BrowserRouter>
   );
 }
+
+export default App;

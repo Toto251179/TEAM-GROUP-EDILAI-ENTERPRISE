@@ -11,6 +11,12 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+tmp/
+dcf_*_inflate*.bin
+tmp_dcf_stream_*.xml
+prezzario_veneto_2025_export.bin
+prezzario_veneto_2025_ods/
 
 # Editor directories and files
 .vscode/*

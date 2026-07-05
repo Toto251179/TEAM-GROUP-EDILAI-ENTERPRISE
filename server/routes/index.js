@@ -1,0 +1,32 @@
+﻿import { Router } from "express";
+import clienti from "./clienti.js";
+import preventivi from "./preventivi.js";
+import cantieri from "./cantieri.js";
+import contabilita from "./contabilita.js";
+import magazzino from "./magazzino.js";
+import rapportini from "./rapportini.js";
+import fatture from "./fatture.js";
+import sal from "./sal.js";
+import ordiniMateriali from "./ordiniMateriali.js";
+import operai from "./operai.js";
+import elencoPrezzi from "./elencoPrezzi.js";
+import tecnici from "./tecnici.js";
+import inboxLavori from "./inboxLavori.js";
+
+const router = Router();
+
+router.use("/clienti", clienti);
+router.use("/preventivi", preventivi);
+router.use("/cantieri", cantieri);
+router.use("/contabilita", contabilita);
+router.use("/magazzino", magazzino);
+router.use("/rapportini", rapportini);
+router.use("/fatture", fatture);
+router.use("/sal", sal);
+router.use("/ordini-materiali", ordiniMateriali);
+router.use("/operai", operai);
+router.use("/elenco-prezzi", elencoPrezzi);
+router.use("/tecnici", tecnici);
+router.use("/inbox-lavori", inboxLavori);
+
+export default router;

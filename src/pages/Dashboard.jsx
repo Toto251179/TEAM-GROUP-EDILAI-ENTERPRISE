@@ -214,7 +214,7 @@ function Dashboard() {
   }, [data, today]);
 
   const actionButtons = [
-    { label: "Nuova Richiesta", icon: "➕", href: "/chiamate-tecnici" },
+    { label: "Nuova Richiesta", icon: "➕", href: "/inbox-lavori" },
     { label: "Nuovo Preventivo", icon: "➕", href: "/preventivi" },
     { label: "Nuovo Ticket", icon: "➕", href: "/chiamate-tecnici" },
     { label: "Calendario", icon: "📅", href: "/cronoprogramma" },
