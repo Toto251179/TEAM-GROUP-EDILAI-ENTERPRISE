@@ -40,7 +40,12 @@ const statiRichiesta = [
 
 const richiestaVuota = {
   id: null,
+  numeroRichiesta: "",
+  data: new Date().toISOString().slice(0, 10),
+  clienteId: "",
   cliente: "",
+  referenteId: "",
+  referente: "",
   telefono: "",
   email: "",
   indirizzo: "",
@@ -69,6 +74,8 @@ function priorityColor(value) {
 function InboxLavori() {
   const navigate = useNavigate();
   const [richieste, setRichieste] = useState([]);
+  const [clienti, setClienti] = useState([]);
+  const [referenti, setReferenti] = useState([]);
   const [form, setForm] = useState(richiestaVuota);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [ricerca, setRicerca] = useState("");
@@ -84,8 +91,15 @@ function InboxLavori() {
     setErrore("");
 
     try {
-      const data = await api.get("/inbox-lavori");
-      setRichieste(Array.isArray(data) ? data : []);
+      const [inboxData, clientiData, referentiData] = await Promise.all([
+        api.get("/inbox-lavori"),
+        api.get("/clienti"),
+        api.get("/referenti"),
+      ]);
+
+      setRichieste(Array.isArray(inboxData) ? inboxData : []);
+      setClienti(Array.isArray(clientiData) ? clientiData : []);
+      setReferenti(Array.isArray(referentiData) ? referentiData : []);
     } catch (error) {
       setErrore(error.message || "Impossibile caricare Inbox Lavori.");
     } finally {
@@ -102,7 +116,11 @@ function InboxLavori() {
       richieste.filter((richiesta) => {
         const matchRicerca = [
           richiesta.id,
+          richiesta.numeroRichiesta,
+          richiesta.clienteId,
           richiesta.cliente,
+          richiesta.referenteId,
+          richiesta.referente,
           richiesta.telefono,
           richiesta.email,
           richiesta.indirizzo,
@@ -128,6 +146,31 @@ function InboxLavori() {
     setForm((corrente) => ({ ...corrente, [campo]: valore }));
   };
 
+  const selezionaCliente = (clienteId) => {
+    const cliente = clienti.find((item) => String(item.id) === String(clienteId));
+
+    setForm((corrente) => ({
+      ...corrente,
+      clienteId,
+      cliente: cliente?.ragioneSociale || corrente.cliente,
+      telefono: corrente.telefono || cliente?.telefono || "",
+      email: corrente.email || cliente?.email || "",
+      indirizzo: corrente.indirizzo || cliente?.indirizzo || "",
+    }));
+  };
+
+  const selezionaReferente = (referenteId) => {
+    const referente = referenti.find((item) => String(item.id) === String(referenteId));
+
+    setForm((corrente) => ({
+      ...corrente,
+      referenteId,
+      referente: referente?.nome || corrente.referente,
+      telefono: corrente.telefono || referente?.telefono || "",
+      email: corrente.email || referente?.email || "",
+    }));
+  };
+
   const apriNuovaRichiesta = () => {
     setForm(richiestaVuota);
     setErrore("");
@@ -139,6 +182,9 @@ function InboxLavori() {
     setForm({
       ...richiestaVuota,
       ...richiesta,
+      data: richiesta.data ? String(richiesta.data).slice(0, 10) : richiestaVuota.data,
+      clienteId: richiesta.clienteId || "",
+      referenteId: richiesta.referenteId || "",
       serveSopralluogo: Boolean(richiesta.serveSopralluogo),
     });
     setErrore("");
@@ -156,7 +202,12 @@ function InboxLavori() {
     setErrore("");
 
     const payload = {
+      numeroRichiesta: form.numeroRichiesta || undefined,
+      data: form.data,
+      clienteId: form.clienteId || null,
       cliente: form.cliente.trim(),
+      referenteId: form.referenteId || null,
+      referente: form.referente.trim(),
       telefono: form.telefono.trim(),
       email: form.email.trim(),
       indirizzo: form.indirizzo.trim(),
@@ -214,7 +265,11 @@ function InboxLavori() {
 
   const columns = [
     { field: "id", headerName: "ID", width: 80 },
+    { field: "numeroRichiesta", headerName: "Numero richiesta", width: 160 },
+    { field: "clienteId", headerName: "ID Cliente", width: 110 },
     { field: "cliente", headerName: "Cliente", minWidth: 190, flex: 1 },
+    { field: "referenteId", headerName: "ID Referente", width: 125 },
+    { field: "referente", headerName: "Referente", minWidth: 170, flex: 1 },
     { field: "telefono", headerName: "Telefono", width: 145 },
     { field: "email", headerName: "Email", minWidth: 190, flex: 1 },
     { field: "indirizzo", headerName: "Indirizzo", minWidth: 220, flex: 1 },
@@ -392,10 +447,60 @@ function InboxLavori() {
             }}
           >
             <TextField
+              label="Numero richiesta"
+              value={form.numeroRichiesta || "Automatico"}
+              disabled
+              fullWidth
+            />
+            <TextField
+              type="date"
+              label="Data"
+              value={form.data}
+              onChange={(event) => aggiornaForm("data", event.target.value)}
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              select
+              label="Seleziona cliente"
+              value={form.clienteId}
+              onChange={(event) => selezionaCliente(event.target.value)}
+              fullWidth
+              helperText={form.clienteId ? `ID Cliente: ${form.clienteId}` : "Puoi anche compilare il cliente manualmente"}
+            >
+              <MenuItem value="">Nessun cliente selezionato</MenuItem>
+              {clienti.map((cliente) => (
+                <MenuItem key={cliente.id} value={cliente.id}>
+                  {cliente.ragioneSociale}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label="Seleziona referente"
+              value={form.referenteId}
+              onChange={(event) => selezionaReferente(event.target.value)}
+              fullWidth
+              helperText={form.referenteId ? `ID Referente: ${form.referenteId}` : "Il referente puo essere associato dopo"}
+            >
+              <MenuItem value="">Nessun referente selezionato</MenuItem>
+              {referenti.map((referente) => (
+                <MenuItem key={referente.id} value={referente.id}>
+                  {referente.nome}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
               label="Cliente"
               value={form.cliente}
               onChange={(event) => aggiornaForm("cliente", event.target.value)}
               required
+              fullWidth
+            />
+            <TextField
+              label="Referente"
+              value={form.referente}
+              onChange={(event) => aggiornaForm("referente", event.target.value)}
               fullWidth
             />
             <TextField

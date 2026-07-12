@@ -1,11 +1,14 @@
 import { Router } from "express";
+import fs from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { query } from "../config/db.js";
 import { createCrudRepository } from "../utils/crud.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { archiviaPdfPreventivo } from "../utils/preventivoPdf.js";
 
 const repository = createCrudRepository({
   table: "preventivi",
-  allowedFields: ["clienteId", "numero", "data", "cliente", "cantiere", "descrizione", "importo", "stato"],
+  allowedFields: ["clienteId", "idIndirizzo", "clienteNome", "clienteVia", "clienteCode", "numero", "data", "cliente", "cantiere", "descrizione", "importo", "stato"],
 });
 
 const router = Router();
@@ -64,9 +67,186 @@ async function ensureIvaTable() {
   );
 }
 
+async function risolviIdIndirizzo(clienteId, idIndirizzo) {
+  if (!(await tableExists("indirizzi"))) return idIndirizzo || null;
+  if (idIndirizzo) {
+    const result = await query(
+      `SELECT id
+       FROM indirizzi
+       WHERE id::text = $1::text
+         AND ($2::text IS NULL OR cliente_id::text = $2::text)
+       LIMIT 1`,
+      [String(idIndirizzo), clienteId ? String(clienteId) : null],
+    );
+    if (result.rows[0]) return result.rows[0].id;
+  }
+  if (!clienteId) return null;
+
+  const result = await query(
+    `SELECT id
+     FROM indirizzi
+     WHERE cliente_id = $1
+     ORDER BY principale DESC, id ASC
+     LIMIT 1`,
+    [clienteId],
+  );
+
+  return result.rows[0]?.id || null;
+}
+
+function normalizzaPreventivo(row) {
+  const preventivo = toCamel(row);
+  const indirizzo = preventivo.indirizzoRecuperatoId
+    ? {
+        id: preventivo.indirizzoRecuperatoId,
+        via: preventivo.indirizzoVia || "",
+        civico: preventivo.indirizzoCivico || "",
+        cap: preventivo.indirizzoCap || "",
+        comune: preventivo.indirizzoComune || "",
+      }
+    : null;
+  const clienteAnagrafica = preventivo.clienteRagioneSociale || preventivo.cliente || "";
+  const clienteIndirizzo = preventivo.clienteIndirizzo || "";
+  const clienteCodeAnagrafica = preventivo.clienteCodeAnagrafica || "";
+
+  delete preventivo.indirizzoRecuperatoId;
+  delete preventivo.indirizzoVia;
+  delete preventivo.indirizzoCivico;
+  delete preventivo.indirizzoCap;
+  delete preventivo.indirizzoComune;
+  delete preventivo.clienteRagioneSociale;
+  delete preventivo.clienteIndirizzo;
+  delete preventivo.clienteCodeAnagrafica;
+
+  return {
+    ...preventivo,
+    cliente: clienteAnagrafica,
+    clienteCode: preventivo.clienteCode || clienteCodeAnagrafica,
+    idIndirizzo: preventivo.idIndirizzo || indirizzo?.id || null,
+    indirizzo: indirizzo || (clienteIndirizzo ? { via: clienteIndirizzo, civico: "", cap: "", comune: "" } : null),
+  };
+}
+
+async function getPreventiviBase(where = "", params = []) {
+  const hasIndirizzi = await tableExists("indirizzi");
+  const selectIndirizzo = hasIndirizzi
+    ? `COALESCE(i_preventivo.id, i_cliente.id) AS indirizzo_recuperato_id,
+       COALESCE(NULLIF(i_preventivo.via, ''), NULLIF(i_cliente.via, ''), c.indirizzo) AS indirizzo_via,
+       COALESCE(i_preventivo.civico, i_cliente.civico) AS indirizzo_civico,
+       COALESCE(i_preventivo.cap, i_cliente.cap) AS indirizzo_cap,
+       COALESCE(i_preventivo.comune, i_cliente.comune) AS indirizzo_comune`
+    : `NULL::integer AS indirizzo_recuperato_id,
+       c.indirizzo AS indirizzo_via,
+       NULL::text AS indirizzo_civico,
+       NULL::text AS indirizzo_cap,
+       NULL::text AS indirizzo_comune`;
+  const joinIndirizzo = hasIndirizzi
+    ? `LEFT JOIN indirizzi i_preventivo ON i_preventivo.id = p.id_indirizzo
+       LEFT JOIN LATERAL (
+         SELECT i.*
+         FROM indirizzi i
+         WHERE i.cliente_id = p.cliente_id
+         ORDER BY i.principale DESC, i.id ASC
+         LIMIT 1
+       ) i_cliente ON TRUE`
+    : "";
+  const result = await query(
+    `SELECT p.*,
+            c.ragione_sociale AS cliente_ragione_sociale,
+            c.indirizzo AS cliente_indirizzo,
+            c.cliente_code AS cliente_code_anagrafica,
+            ${selectIndirizzo}
+     FROM preventivi p
+     LEFT JOIN clienti c ON c.id = p.cliente_id
+     ${joinIndirizzo}
+     ${where}
+     ORDER BY p.created_at DESC`,
+    params,
+  );
+
+  return result.rows.map(normalizzaPreventivo);
+}
+
 function normalizzaIvaAliquota(ivaAliquota) {
   const valore = Number(String(ivaAliquota ?? "").replace(",", "."));
   return Number.isFinite(valore) && valore >= 0 ? valore : 22;
+}
+
+async function getClienteAnagrafica(clienteId) {
+  if (!clienteId) return null;
+
+  const result = await query(
+    `SELECT id, cliente_code, ragione_sociale, indirizzo
+     FROM clienti
+     WHERE id::text = $1::text
+     LIMIT 1`,
+    [String(clienteId)],
+  );
+
+  return result.rows[0] || null;
+}
+
+async function getClienteCompleto(clienteId) {
+  if (!clienteId) return null;
+
+  const result = await query(
+    `SELECT *
+     FROM clienti
+     WHERE id::text = $1::text
+     LIMIT 1`,
+    [String(clienteId)],
+  );
+
+  return result.rows[0] ? toCamel(result.rows[0]) : null;
+}
+
+async function getIndirizzoAnagrafica(idIndirizzo, clienteId) {
+  if (!idIndirizzo || !(await tableExists("indirizzi"))) return null;
+
+  const result = await query(
+    `SELECT id, via, civico, cap, comune
+     FROM indirizzi
+     WHERE id::text = $1::text
+       AND ($2::text IS NULL OR cliente_id::text = $2::text)
+     LIMIT 1`,
+    [String(idIndirizzo), clienteId ? String(clienteId) : null],
+  );
+
+  return result.rows[0] || null;
+}
+
+async function normalizzaPayloadClientePreventivo(data, { clienteObbligatorio = false } = {}) {
+  const payload = { ...data };
+  const clienteId = payload.clienteId || payload.cliente_id || null;
+
+  if (clienteObbligatorio && !clienteId) {
+    const error = new Error("Seleziona cliente dall'anagrafica.");
+    error.status = 400;
+    throw error;
+  }
+
+  if (!clienteId) return payload;
+
+  const cliente = await getClienteAnagrafica(clienteId);
+  if (!cliente) {
+    const error = new Error("Cliente collegato non trovato in anagrafica.");
+    error.status = 400;
+    throw error;
+  }
+
+  const idIndirizzo = await risolviIdIndirizzo(cliente.id, payload.idIndirizzo);
+  const indirizzo = await getIndirizzoAnagrafica(idIndirizzo, cliente.id);
+  const via = [indirizzo?.via, indirizzo?.civico].filter(Boolean).join(" ") || cliente.indirizzo || "";
+
+  return {
+    ...payload,
+    clienteId: cliente.id,
+    idIndirizzo,
+    clienteCode: cliente.cliente_code || "",
+    clienteNome: cliente.ragione_sociale || "",
+    clienteVia: via,
+    cliente: cliente.ragione_sociale || payload.cliente || "",
+  };
 }
 
 async function salvaIvaAliquota(preventivoId, ivaAliquota) {
@@ -115,7 +295,7 @@ async function getRighe(preventivoId) {
 }
 
 async function getPreventivoCompleto(id) {
-  const preventivo = await repository.findById(id);
+  const preventivo = (await getPreventiviBase("WHERE p.id = $1", [id]))[0];
   if (!preventivo) return null;
   const ivaAliquote = await getIvaAliquote([preventivo.id]);
 
@@ -357,7 +537,7 @@ async function salvaRighe(preventivoId, righe = []) {
 }
 
 router.get("/", asyncHandler(async (req, res) => {
-  const preventivi = await repository.findAll();
+  const preventivi = await getPreventiviBase();
   const ivaAliquote = await getIvaAliquote(preventivi.map((preventivo) => preventivo.id));
   const completi = await Promise.all(
     preventivi.map(async (preventivo) => ({
@@ -378,6 +558,7 @@ router.get("/:id", asyncHandler(async (req, res) => {
 
 router.post("/", asyncHandler(async (req, res) => {
   const righe = Array.isArray(req.body.righe) ? req.body.righe : [];
+  const payload = await normalizzaPayloadClientePreventivo(req.body, { clienteObbligatorio: true });
   const importo = righe.length
     ? righe.reduce((totale, riga) => {
         const quantita = Number(riga.quantita || 0);
@@ -388,7 +569,7 @@ router.post("/", asyncHandler(async (req, res) => {
     : Number(req.body.importo || 0);
 
   const preventivo = await repository.create({
-    ...req.body,
+    ...payload,
     ivaAliquota: undefined,
     importo: Number(importo.toFixed(2)),
   });
@@ -400,7 +581,7 @@ router.post("/", asyncHandler(async (req, res) => {
 
 router.put("/:id", asyncHandler(async (req, res) => {
   const righe = Array.isArray(req.body.righe) ? req.body.righe : null;
-  const payload = { ...req.body };
+  const payload = await normalizzaPayloadClientePreventivo(req.body);
   const ivaAliquota = payload.ivaAliquota;
   delete payload.ivaAliquota;
 
@@ -432,9 +613,86 @@ router.delete("/:id", asyncHandler(async (req, res) => {
   res.json({ deleted: true, item });
 }));
 
-router.post("/:id/accetta", asyncHandler(async (req, res) => {
-  const preventivo = await repository.update(req.params.id, { stato: "Accettato" });
+router.post("/:id/archivia-pdf", asyncHandler(async (req, res) => {
+  const preventivo = await getPreventivoCompleto(req.params.id);
   if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
+
+  const cliente = await getClienteCompleto(preventivo.clienteId);
+  let archivio;
+  try {
+    archivio = await archiviaPdfPreventivo(preventivo, cliente ? [cliente] : undefined);
+  } catch (error) {
+    return res.status(500).json({
+      message: "Archiviazione preventivo non riuscita.",
+      percorsoCercato: process.env.PREVENTIVI_OUTPUT_DIR || "",
+      errore: error.message,
+      motivo: error.code || "Errore scrittura file",
+    });
+  }
+
+  res.json({
+    message: "Preventivo archiviato correttamente.",
+    preventivo,
+    archivio: {
+      rootPath: archivio.rootPath,
+      fileName: archivio.fileName,
+      filePath: archivio.filePath,
+      clienteFolderName: archivio.clienteFolderName,
+      clienteFolderPath: archivio.clienteFolderPath,
+      folderName: archivio.folderName,
+      folderPath: archivio.folderPath,
+    },
+  });
+}));
+
+router.post("/:id/apri-cartella", asyncHandler(async (req, res) => {
+  const preventivo = await getPreventivoCompleto(req.params.id);
+  if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
+
+  const cliente = await getClienteCompleto(preventivo.clienteId);
+  let archivio;
+  try {
+    archivio = await archiviaPdfPreventivo(preventivo, cliente ? [cliente] : undefined);
+    await fs.access(archivio.folderPath);
+    spawn("explorer.exe", [archivio.folderPath], { detached: true, stdio: "ignore" }).unref();
+  } catch (error) {
+    return res.status(500).json({
+      message: "Apertura cartella non riuscita.",
+      percorsoCercato: archivio?.folderPath || process.env.PREVENTIVI_OUTPUT_DIR || "",
+      errore: error.message,
+      motivo: error.code || "Errore apertura cartella",
+    });
+  }
+
+  res.json({ message: "Cartella aperta.", folderPath: archivio.folderPath });
+}));
+
+router.post("/:id/apri-pdf", asyncHandler(async (req, res) => {
+  const preventivo = await getPreventivoCompleto(req.params.id);
+  if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
+
+  const cliente = await getClienteCompleto(preventivo.clienteId);
+  let archivio;
+  try {
+    archivio = await archiviaPdfPreventivo(preventivo, cliente ? [cliente] : undefined);
+    await fs.access(archivio.filePath);
+    spawn("explorer.exe", [archivio.filePath], { detached: true, stdio: "ignore" }).unref();
+  } catch (error) {
+    return res.status(500).json({
+      message: "Apertura PDF non riuscita.",
+      percorsoCercato: archivio?.filePath || process.env.PREVENTIVI_OUTPUT_DIR || "",
+      errore: error.message,
+      motivo: error.code || "Errore apertura PDF",
+    });
+  }
+
+  res.json({ message: "PDF aperto.", filePath: archivio.filePath });
+}));
+
+router.post("/:id/accetta", asyncHandler(async (req, res) => {
+  const preventivoAggiornato = await repository.update(req.params.id, { stato: "Accettato" });
+  if (!preventivoAggiornato) return res.status(404).json({ message: "Preventivo non trovato" });
+  const preventivo = await getPreventivoCompleto(req.params.id);
 
   const cantiereEsistente = await query(
     "SELECT * FROM cantieri WHERE preventivo_id = $1 LIMIT 1",
@@ -446,10 +704,10 @@ router.post("/:id/accetta", asyncHandler(async (req, res) => {
   }
 
   const cantiere = await query(
-    `INSERT INTO cantieri (preventivo_id, cliente_id, nome, cliente, importo, stato)
-     VALUES ($1, $2, $3, $4, $5, 'In Corso')
+    `INSERT INTO cantieri (preventivo_id, cliente_id, cliente_code, nome, cliente, importo, stato)
+     VALUES ($1, $2, $3, $4, $5, $6, 'In Corso')
      RETURNING *`,
-    [preventivo.id, preventivo.clienteId, preventivo.descrizione, preventivo.cliente, preventivo.importo],
+    [preventivo.id, preventivo.clienteId, preventivo.clienteCode || "", preventivo.descrizione, preventivo.cliente, preventivo.importo],
   );
 
   res.json({ preventivo: await getPreventivoCompleto(req.params.id), cantiere: cantiere.rows[0] });

@@ -12,7 +12,6 @@ import {
   Select,
   Stack,
   TextField,
-  Tooltip,
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { azienda } from "../config/azienda";
@@ -40,6 +39,9 @@ const preventivoVuoto = {
   numero: "",
   data: new Date().toISOString().split("T")[0],
   clienteId: "",
+  idIndirizzo: "",
+  indirizzo: null,
+  clienteCode: "",
   cliente: "",
   cantiere: "",
   descrizione: "",
@@ -264,6 +266,97 @@ function formatNumeroPreventivo(numero) {
   return `PREV-${match[1]} -Rev${String(revisione).padStart(2, "0")}`;
 }
 
+function formatIndirizzoCompleto(indirizzo) {
+  if (!indirizzo) return "";
+  return [formatViaCivico(indirizzo), indirizzo.cap, indirizzo.comune].filter(Boolean).join(", ");
+}
+
+function formatViaCivico(indirizzo) {
+  if (!indirizzo) return "";
+  return [indirizzo.via, indirizzo.civico].filter(Boolean).join(" ");
+}
+
+function getClienteNome(preventivo, clientiArchivio = []) {
+  const cliente = preventivo.cliente;
+  const clienteId = preventivo.clienteId || preventivo.idCliente || cliente?.id;
+  const clienteDaArchivio = clientiArchivio.find((item) => String(item.id) === String(clienteId));
+  const nomeCliente = typeof cliente === "object" && cliente !== null
+    ? cliente.ragioneSociale || cliente.ragione_sociale || cliente.nome || cliente.denominazione || ""
+    : cliente;
+  return String(
+    nomeCliente ||
+    preventivo.clienteNome ||
+    preventivo.nomeCliente ||
+    clienteDaArchivio?.ragioneSociale ||
+    clienteDaArchivio?.ragione_sociale ||
+    clienteDaArchivio?.nome ||
+    "",
+  ).replace(/^ID\s*\d+\s*-\s*/i, "").trim();
+}
+
+function normalizzaViaPreventivo(value) {
+  if (!value) return "";
+  if (typeof value === "object") {
+    return [value.via || value.indirizzo || "", value.civico || ""].filter(Boolean).join(" ");
+  }
+  return String(value).trim();
+}
+
+function getClienteVia(preventivo, clientiArchivio = []) {
+  const clienteId = preventivo.clienteId || preventivo.idCliente || preventivo.cliente?.id;
+  const clienteDaArchivio = clientiArchivio.find((item) => String(item.id) === String(clienteId));
+
+  return (
+    normalizzaViaPreventivo(preventivo.clienteVia) ||
+    normalizzaViaPreventivo(preventivo.cliente?.via) ||
+    normalizzaViaPreventivo(preventivo.cliente?.indirizzo) ||
+    normalizzaViaPreventivo(preventivo.cliente?.address) ||
+    normalizzaViaPreventivo(preventivo.cliente?.sede) ||
+    normalizzaViaPreventivo(clienteDaArchivio?.via) ||
+    normalizzaViaPreventivo(clienteDaArchivio?.indirizzo) ||
+    normalizzaViaPreventivo(clienteDaArchivio?.address) ||
+    normalizzaViaPreventivo(clienteDaArchivio?.sede) ||
+    normalizzaViaPreventivo(preventivo.via) ||
+    normalizzaViaPreventivo(preventivo.indirizzo)
+  );
+}
+
+function getClienteCode(preventivo, clientiArchivio = []) {
+  const clienteId = preventivo.clienteId || preventivo.idCliente || preventivo.cliente?.id;
+  const clienteDaArchivio = clientiArchivio.find((item) => String(item.id) === String(clienteId));
+  const nomePreventivo = String(preventivo.clienteNome || preventivo.cliente || "").trim().toLowerCase();
+  const clienteDaNome = clientiArchivio.find(
+    (item) => String(item.ragioneSociale || item.ragione_sociale || item.nome || "").trim().toLowerCase() === nomePreventivo,
+  );
+
+  return String(
+    preventivo.clienteCode ||
+    preventivo.cliente?.clienteCode ||
+    clienteDaArchivio?.clienteCode ||
+    clienteDaNome?.clienteCode ||
+    "",
+  ).trim();
+}
+
+function disegnaRiquadroClienteCode(doc, clienteCode) {
+  if (!clienteCode) return;
+  const x = 164;
+  const y = 16;
+  const width = 36;
+  const height = 18;
+  doc.setDrawColor(30, 41, 59);
+  doc.setLineWidth(0.3);
+  doc.rect(x, y, width, height);
+  doc.setFontSize(8);
+  doc.setFont(undefined, "bold");
+  doc.text(String(clienteCode), x + width / 2, y + height / 2 + 1, { align: "center" });
+}
+
+function indirizzoDaCliente(cliente, idIndirizzo) {
+  const indirizzi = Array.isArray(cliente?.indirizzi) ? cliente.indirizzi : [];
+  return indirizzi.find((indirizzo) => String(indirizzo.id) === String(idIndirizzo)) || null;
+}
+
 function generaNumeroRevisione(numero) {
   const valore = formatNumeroPreventivo(numero);
   const match = valore.match(/PREV-(\d+)\s*-\s*Rev(\d+)/i);
@@ -302,9 +395,14 @@ function Preventivi() {
   const [vociPrezzario, setVociPrezzario] = useState([]);
   const [caricamentoPrezzario, setCaricamentoPrezzario] = useState(false);
   const [ricerca, setRicerca] = useState("");
+  const [filtroClienteCode, setFiltroClienteCode] = useState("");
+  const [filtroCliente, setFiltroCliente] = useState("");
+  const [filtroNumeroPreventivo, setFiltroNumeroPreventivo] = useState("");
   const [filtroStato, setFiltroStato] = useState("Tutti");
   const [caricamento, setCaricamento] = useState(true);
   const [errore, setErrore] = useState("");
+  const [messaggio, setMessaggio] = useState("");
+  const [archivioInCorso, setArchivioInCorso] = useState("");
 
   useEffect(() => {
     let componenteAttivo = true;
@@ -321,16 +419,16 @@ function Preventivi() {
 
         if (componenteAttivo) {
           setErrore("");
-          const clientePrefillRaw = localStorage.getItem("teamGroupPreventivoCliente");
-          let clientePrefill = null;
-
-          try {
-            clientePrefill = clientePrefillRaw ? JSON.parse(clientePrefillRaw) : null;
-          } catch {
-            clientePrefill = null;
-          }
-
-          if (clientePrefillRaw) localStorage.removeItem("teamGroupPreventivoCliente");
+          const params = new URLSearchParams(window.location.search);
+          const clientePrefill = params.get("clienteId")
+            ? {
+                clienteId: params.get("clienteId") || "",
+                idIndirizzo: params.get("idIndirizzo") || "",
+                clienteCode: params.get("clienteCode") || "",
+                cliente: params.get("cliente") || "",
+                cantiere: "",
+              }
+            : null;
 
           const vocePrezzarioRaw = localStorage.getItem("teamGroupVocePrezzario");
           let vocePrezzario = null;
@@ -369,8 +467,16 @@ function Preventivi() {
             ...corrente,
             numero: generaNumeroPreventivo(preventiviDb),
             clienteId: clientePrefill?.clienteId || corrente.clienteId,
+            clienteCode: clientePrefill?.clienteCode || corrente.clienteCode,
             cliente: clientePrefill?.cliente || corrente.cliente,
             cantiere: clientePrefill?.cantiere || corrente.cantiere,
+            idIndirizzo:
+              clientePrefill?.idIndirizzo ||
+              clientiDb.find((cliente) => String(cliente.id) === String(clientePrefill?.clienteId))?.indirizzi?.[0]?.id ||
+              corrente.idIndirizzo,
+            indirizzo:
+              clientiDb.find((cliente) => String(cliente.id) === String(clientePrefill?.clienteId))?.indirizzi?.[0] ||
+              corrente.indirizzo,
           }));
         }
       } catch (error) {
@@ -424,7 +530,10 @@ function Preventivi() {
       preventivi.filter((preventivo) => {
         const testo = [
           preventivo.numero,
+          getClienteCode(preventivo, clienti),
+          preventivo.clienteCode,
           preventivo.cliente,
+          preventivo.clienteNome,
           preventivo.cantiere,
           preventivo.descrizione,
           preventivo.stato,
@@ -432,11 +541,20 @@ function Preventivi() {
           .join(" ")
           .toLowerCase();
         const passaRicerca = testo.includes(ricerca.toLowerCase());
+        const passaClienteCode =
+          !filtroClienteCode.trim() ||
+          getClienteCode(preventivo, clienti).toLowerCase().includes(filtroClienteCode.trim().toLowerCase());
+        const passaCliente =
+          !filtroCliente.trim() ||
+          [preventivo.cliente, preventivo.clienteNome].join(" ").toLowerCase().includes(filtroCliente.trim().toLowerCase());
+        const passaNumero =
+          !filtroNumeroPreventivo.trim() ||
+          formatNumeroPreventivo(preventivo.numero).toLowerCase().includes(filtroNumeroPreventivo.trim().toLowerCase());
         const passaStato = filtroStato === "Tutti" || preventivo.stato === filtroStato;
 
-        return passaRicerca && passaStato;
+        return passaRicerca && passaClienteCode && passaCliente && passaNumero && passaStato;
       }),
-    [preventivi, ricerca, filtroStato],
+    [preventivi, ricerca, filtroClienteCode, filtroCliente, filtroNumeroPreventivo, filtroStato, clienti],
   );
 
   const riepilogo = useMemo(
@@ -449,16 +567,48 @@ function Preventivi() {
     [preventiviFiltrati],
   );
 
+  const indirizziClienteForm = useMemo(() => {
+    const cliente = clienti.find((item) => String(item.id) === String(form.clienteId));
+    return Array.isArray(cliente?.indirizzi) ? cliente.indirizzi : [];
+  }, [clienti, form.clienteId]);
+
+  const aggiornaVistaDaDatabase = async () => {
+    const preventiviDb = await api.get("/preventivi");
+    const [clientiResult, cantieriResult] = await Promise.allSettled([
+      api.get("/clienti"),
+      api.get("/cantieri"),
+    ]);
+
+    setPreventivi(preventiviDb);
+    if (clientiResult.status === "fulfilled") setClienti(clientiResult.value);
+    if (cantieriResult.status === "fulfilled") setCantieri(cantieriResult.value);
+
+    return { preventiviDb, clientiDb: clientiResult.value || [], cantieriDb: cantieriResult.value || [] };
+  };
+
   const aggiornaForm = (campo, valore) => {
     setForm((corrente) => ({ ...corrente, [campo]: valore }));
   };
 
   const selezionaCliente = (clienteId) => {
     const cliente = clienti.find((item) => String(item.id) === String(clienteId));
+    const primoIndirizzo = Array.isArray(cliente?.indirizzi) ? cliente.indirizzi[0] : null;
     setForm((corrente) => ({
       ...corrente,
       clienteId,
+      clienteCode: cliente?.clienteCode || "",
       cliente: cliente?.ragioneSociale || corrente.cliente,
+      idIndirizzo: primoIndirizzo?.id || "",
+      indirizzo: primoIndirizzo || null,
+    }));
+  };
+
+  const selezionaIndirizzo = (idIndirizzo) => {
+    const cliente = clienti.find((item) => String(item.id) === String(form.clienteId));
+    setForm((corrente) => ({
+      ...corrente,
+      idIndirizzo,
+      indirizzo: indirizzoDaCliente(cliente, idIndirizzo),
     }));
   };
 
@@ -569,13 +719,14 @@ function Preventivi() {
     });
   };
 
-  const resetForm = () => {
+  const resetForm = (preventiviBase = preventivi) => {
     setForm({
       ...preventivoVuoto,
-      numero: generaNumeroPreventivo(preventivi),
+      numero: generaNumeroPreventivo(preventiviBase),
       data: new Date().toISOString().split("T")[0],
     });
     setRiga(rigaVuota);
+    setMessaggio("");
   };
 
   const modificaPreventivo = (preventivo) => {
@@ -584,6 +735,9 @@ function Preventivi() {
       numero: formatNumeroPreventivo(preventivo.numero),
       data: String(preventivo.data || new Date().toISOString()).slice(0, 10),
       clienteId: preventivo.clienteId || "",
+      idIndirizzo: preventivo.idIndirizzo || "",
+      indirizzo: preventivo.indirizzo || null,
+      clienteCode: preventivo.clienteCode || "",
       cliente: preventivo.cliente || "",
       cantiere: preventivo.cantiere || "",
       descrizione: preventivo.descrizione || "",
@@ -595,19 +749,72 @@ function Preventivi() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const archiviaPreventivoPdf = async (preventivo) => {
+    setErrore("");
+    setMessaggio("");
+    setMessaggio("");
+    setArchivioInCorso(String(preventivo.id));
+
+    try {
+      const risposta = await api.post(`/preventivi/${preventivo.id}/archivia-pdf`, {});
+      setMessaggio(risposta.message || "Preventivo archiviato correttamente.");
+      await aggiornaVistaDaDatabase();
+      return risposta;
+    } catch (error) {
+      setErrore(error.message);
+      return null;
+    } finally {
+      setArchivioInCorso("");
+    }
+  };
+
+  const apriCartellaPreventivo = async (preventivo) => {
+    setErrore("");
+    setMessaggio("");
+
+    try {
+      await api.post(`/preventivi/${preventivo.id}/apri-cartella`, {});
+    } catch (error) {
+      setErrore(error.message);
+    }
+  };
+
+  const apriPdfPreventivo = async (preventivo) => {
+    setErrore("");
+    setMessaggio("");
+
+    try {
+      await api.post(`/preventivi/${preventivo.id}/apri-pdf`, {});
+    } catch (error) {
+      setErrore(error.message);
+    }
+  };
+
   const salvaPreventivo = async (statoForzato) => {
     if (!form.cliente || !form.descrizione || form.righe.length === 0) {
       setErrore("Inserisci cliente, oggetto lavori e almeno una riga lavorazione.");
       return;
     }
+    if (!form.clienteId) {
+      setErrore("Seleziona cliente dall'anagrafica.");
+      return;
+    }
 
     setErrore("");
+    const clienteSelezionato = clienti.find((clienteItem) => String(clienteItem.id) === String(form.clienteId));
+    const clienteNome = getClienteNome({ ...form, cliente: clienteSelezionato || form.cliente }, clienti);
+    const clienteVia = getClienteVia({ ...form, cliente: clienteSelezionato || form.cliente }, clienti);
+    const clienteCode = getClienteCode({ ...form, cliente: clienteSelezionato || form.cliente }, clienti);
 
     const payload = {
-      clienteId: form.clienteId || null,
+      clienteId: clienteSelezionato?.id || form.clienteId || null,
+      idIndirizzo: form.idIndirizzo || null,
+      clienteNome,
+      clienteVia,
+      clienteCode,
       numero: formatNumeroPreventivo(form.numero) || generaNumeroPreventivo(preventivi),
       data: form.data,
-      cliente: form.cliente,
+      cliente: clienteNome || form.cliente,
       cantiere: form.cantiere,
       descrizione: form.descrizione,
       ivaAliquota: normalizzaIvaAliquota(form.ivaAliquota),
@@ -616,16 +823,25 @@ function Preventivi() {
     };
 
     try {
+      let salvato;
       if (form.id) {
-        const aggiornato = await api.put(`/preventivi/${form.id}`, payload);
-        setPreventivi((attuali) => attuali.map((preventivo) => (preventivo.id === form.id ? aggiornato : preventivo)));
+        salvato = await api.put(`/preventivi/${form.id}`, payload);
       } else {
-        const creato = await api.post("/preventivi", payload);
-        setPreventivi((attuali) => [creato, ...attuali]);
+        salvato = await api.post("/preventivi", payload);
       }
 
-      resetForm();
+      if (payload.stato === "Accettato") {
+        await api.post(`/preventivi/${salvato.id}/accetta`, {});
+        await aggiornaVistaDaDatabase();
+        window.location.href = "/cantieri";
+        return;
+      }
+
+      await archiviaPreventivoPdf(salvato);
+      const { preventiviDb } = await aggiornaVistaDaDatabase();
+      resetForm(preventiviDb);
     } catch (error) {
+      await aggiornaVistaDaDatabase().catch(() => {});
       setErrore(error.message);
     }
   };
@@ -638,7 +854,7 @@ function Preventivi() {
 
     try {
       await api.delete(`/preventivi/${preventivo.id}`);
-      setPreventivi((attuali) => attuali.filter((item) => item.id !== preventivo.id));
+      await aggiornaVistaDaDatabase();
       if (form.id === preventivo.id) resetForm();
     } catch (error) {
       setErrore(error.message);
@@ -650,30 +866,29 @@ function Preventivi() {
 
     try {
       if (stato === "Accettato") {
-        const { preventivo: aggiornato } = await api.post(`/preventivi/${preventivo.id}/accetta`, {});
-        setPreventivi((attuali) => attuali.map((item) => (item.id === preventivo.id ? aggiornato : item)));
+        await api.post(`/preventivi/${preventivo.id}/accetta`, {});
+        await aggiornaVistaDaDatabase();
+        window.location.href = "/cantieri";
         return;
       }
 
-      const aggiornato = await api.put(`/preventivi/${preventivo.id}`, { stato });
-      setPreventivi((attuali) => attuali.map((item) => (item.id === preventivo.id ? aggiornato : item)));
+      await api.put(`/preventivi/${preventivo.id}`, { stato });
+      await aggiornaVistaDaDatabase();
     } catch (error) {
       setErrore(error.message);
     }
   };
 
   const accettaECreaCantiere = async (preventivo) => {
-    const conferma = window.confirm(`Accettare il preventivo ${preventivo.numero} e creare il cantiere?`);
+    const conferma = window.confirm(`Trasformare il preventivo ${preventivo.numero} in cantiere?`);
     if (!conferma) return;
 
     setErrore("");
 
     try {
-      const { preventivo: aggiornato, cantiere } = await api.post(`/preventivi/${preventivo.id}/accetta`, {});
-      setPreventivi((attuali) => attuali.map((item) => (item.id === preventivo.id ? aggiornato : item)));
-      setCantieri((attuali) =>
-        attuali.some((item) => item.id === cantiere.id) ? attuali : [cantiere, ...attuali],
-      );
+      await api.post(`/preventivi/${preventivo.id}/accetta`, {});
+      await aggiornaVistaDaDatabase();
+      window.location.href = "/cantieri";
     } catch (error) {
       setErrore(error.message);
     }
@@ -699,6 +914,7 @@ function Preventivi() {
         tipo: "Attiva",
         data: new Date().toISOString().split("T")[0],
         cantiere: preventivo.cantiere,
+        clienteCode: getClienteCode(preventivo, clienti),
         soggetto: preventivo.cliente,
         importo,
         stato: "Da Pagare",
@@ -721,6 +937,10 @@ function Preventivi() {
 
     const payload = {
       clienteId: preventivo.clienteId || null,
+      idIndirizzo: preventivo.idIndirizzo || null,
+      clienteNome: getClienteNome(preventivo, clienti),
+      clienteVia: getClienteVia(preventivo, clienti),
+      clienteCode: getClienteCode(preventivo, clienti),
       numero: numeroRevisione,
       data: new Date().toISOString().split("T")[0],
       cliente: preventivo.cliente,
@@ -732,9 +952,9 @@ function Preventivi() {
     };
 
     try {
-      const annullato = await api.put(`/preventivi/${preventivo.id}`, { stato: "Annullato" });
+      await api.put(`/preventivi/${preventivo.id}`, { stato: "Annullato" });
       const creato = await api.post("/preventivi", payload);
-      setPreventivi((attuali) => [creato, ...attuali.map((item) => (item.id === annullato.id ? annullato : item))]);
+      await aggiornaVistaDaDatabase();
       modificaPreventivo(creato);
     } catch (error) {
       setErrore(error.message);
@@ -742,12 +962,16 @@ function Preventivi() {
   };
 
   const generaPDF = async (preventivo) => {
+    await archiviaPreventivoPdf(preventivo);
+    return;
+
     const doc = new jsPDF();
     const righe = preventivo.righe || [];
     const totaliPdf = calcolaTotaliPdf(righe, preventivo.ivaAliquota);
     let y = 18;
 
     await disegnaIntestazioneAzienda(doc, y);
+    disegnaRiquadroClienteCode(doc, getClienteCode(preventivo, clienti));
     y = 42;
 
     doc.setFontSize(12);
@@ -764,8 +988,8 @@ function Preventivi() {
     const dettaglioValoreX = 28;
     const dettaglioValoreMaxWidth = 164;
     [
-      ["Cliente:", preventivo.cliente || ""],
-      ["Indirizzo:", preventivo.cantiere || ""],
+      ["Cliente:", getClienteNome(preventivo, clienti)],
+      ["Via:", getClienteVia(preventivo, clienti)],
       ["Oggetto:", preventivo.descrizione || ""],
       ["Commessa:", commessa],
     ].forEach(([label, value]) => {
@@ -868,6 +1092,7 @@ function Preventivi() {
 
     const tabellaComputo = doc.lastAutoTable;
     y = tabellaComputo.finalY;
+
     if (y > 235) {
       doc.addPage();
       y = 20;
@@ -993,12 +1218,13 @@ function Preventivi() {
   const esportaElencoPreventivi = () => {
     esportaCsv(
       `elenco-preventivi-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Numero", "Data", "Cliente", "Cantiere", "Oggetto", "Righe", "Lordo", "Sconto", "Imponibile", "IVA %", "IVA", "Totale", "Stato"],
+      ["ID Cliente", "Numero", "Data", "Cliente", "Cantiere", "Oggetto", "Righe", "Lordo", "Sconto", "Imponibile", "IVA %", "IVA", "Totale", "Stato"],
       preventiviFiltrati.map((preventivo) => {
         const righe = preventivo.righe || [];
         const totali = calcolaTotali(righe, preventivo.ivaAliquota);
 
         return [
+          getClienteCode(preventivo, clienti),
           formatNumeroPreventivo(preventivo.numero),
           formatDate(preventivo.data),
           preventivo.cliente,
@@ -1064,6 +1290,7 @@ function Preventivi() {
         return {
           ...preventivo,
           id: preventivo.id,
+          clienteCodeGrid: getClienteCode(preventivo, clienti),
           numeroFormattato: formatNumeroPreventivo(preventivo.numero),
           dataFormattata: formatDate(preventivo.data),
           oggetto: preventivo.descrizione || "",
@@ -1072,14 +1299,20 @@ function Preventivi() {
           righeCount: righe.length,
         };
       }),
-    [preventiviFiltrati],
+    [preventiviFiltrati, clienti],
   );
 
   const colonnePreventiviGrid = useMemo(
     () => [
       {
+        field: "clienteCodeGrid",
+        headerName: "ID Cliente",
+        minWidth: 120,
+        flex: 0.55,
+      },
+      {
         field: "numeroFormattato",
-        headerName: "Numero preventivo",
+        headerName: "N. Preventivo",
         minWidth: 170,
         flex: 0.8,
       },
@@ -1125,7 +1358,7 @@ function Preventivi() {
       {
         field: "azioni",
         headerName: "Azioni",
-        minWidth: 560,
+        minWidth: 760,
         sortable: false,
         filterable: false,
         renderCell: (params) => {
@@ -1139,15 +1372,17 @@ function Preventivi() {
                 Duplica
               </MuiButton>
               <MuiButton size="small" variant="outlined" onClick={() => generaPDF(preventivo)}>
-                PDF
+                {archivioInCorso === String(preventivo.id) ? "Archivio..." : "PDF"}
               </MuiButton>
-              <Tooltip title={preventivo.stato === "Accettato" ? "Preventivo gia accettato" : ""}>
-                <span>
-                  <MuiButton size="small" variant="contained" disabled={preventivo.stato === "Accettato"} onClick={() => accettaECreaCantiere(preventivo)}>
-                    Trasforma in Cantiere
-                  </MuiButton>
-                </span>
-              </Tooltip>
+              <MuiButton size="small" variant="outlined" onClick={() => apriCartellaPreventivo(preventivo)}>
+                Apri cartella
+              </MuiButton>
+              <MuiButton size="small" variant="outlined" onClick={() => apriPdfPreventivo(preventivo)}>
+                Apri PDF
+              </MuiButton>
+              <MuiButton size="small" variant="contained" onClick={() => accettaECreaCantiere(preventivo)}>
+                Trasforma in Cantiere
+              </MuiButton>
               <MuiButton size="small" color="error" variant="outlined" onClick={() => eliminaPreventivo(preventivo)}>
                 Elimina
               </MuiButton>
@@ -1156,7 +1391,7 @@ function Preventivi() {
         },
       },
     ],
-    [],
+    [clienti, archivioInCorso],
   );
 
   const card = {
@@ -1168,7 +1403,7 @@ function Preventivi() {
   };
 
   return (
-    <div style={{ width: "1800px", maxWidth: "none" }}>
+    <div className="preventivi-page" style={{ width: "100%", maxWidth: "none" }}>
       <h1>Preventivi Enterprise</h1>
 
       <div
@@ -1198,6 +1433,7 @@ function Preventivi() {
       </div>
 
       {errore && <p style={{ color: "crimson", marginBottom: "15px" }}>{errore}</p>}
+      {messaggio && <p style={{ color: "#15803d", marginBottom: "15px", fontWeight: 700 }}>{messaggio}</p>}
 
       <div style={{ background: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
         <h2>{form.id ? "Modifica Preventivo" : "Nuovo Preventivo"}</h2>
@@ -1221,6 +1457,15 @@ function Preventivi() {
           </select>
 
           <input placeholder="Cliente" value={form.cliente} onChange={(e) => aggiornaForm("cliente", e.target.value)} />
+
+          <select value={form.idIndirizzo} onChange={(e) => selezionaIndirizzo(e.target.value)} disabled={!indirizziClienteForm.length}>
+            <option value="">Indirizzo preventivo</option>
+            {indirizziClienteForm.map((indirizzo) => (
+              <option key={indirizzo.id} value={indirizzo.id}>
+                {formatIndirizzoCompleto(indirizzo)}
+              </option>
+            ))}
+          </select>
 
           <select value={form.cantiere} onChange={(e) => selezionaCantiere(e.target.value)}>
             <option value="">Cantiere esistente</option>
@@ -1256,6 +1501,15 @@ function Preventivi() {
           onChange={(e) => aggiornaForm("descrizione", e.target.value)}
           style={{ width: "100%", marginTop: "12px" }}
         />
+
+        {form.indirizzo && (
+          <div style={{ marginTop: "10px", color: "#475569", fontWeight: 700 }}>
+            Cliente: {getClienteNome(form, clienti)}<br />
+            Via: {formatViaCivico(form.indirizzo)}<br />
+            CAP: {form.indirizzo.cap || ""}<br />
+            Comune: {form.indirizzo.comune || ""}
+          </div>
+        )}
 
         <h2 style={{ marginTop: "22px" }}>Righe Lavorazioni</h2>
 
@@ -1522,12 +1776,11 @@ function Preventivi() {
 
         <div style={{ display: "flex", gap: "10px", marginTop: "18px" }}>
           <button onClick={() => salvaPreventivo()}>{form.id ? "Salva Modifiche" : "Salva Preventivo"}</button>
-          <button onClick={() => salvaPreventivo("Inviato")}>Salva e invia</button>
           <button onClick={resetForm}>Nuovo / Annulla</button>
         </div>
       </div>
 
-      <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, border: "1px solid #e2e8f0" }}>
+      <Paper className="preventivi-list-panel" elevation={0} sx={{ width: "100%", maxWidth: "none", p: 2.5, borderRadius: 2, border: "1px solid #e2e8f0" }}>
         <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ justifyContent: "space-between", alignItems: { xs: "stretch", md: "center" }, mb: 2 }}>
           <Box>
             <h2 style={{ margin: 0 }}>Elenco Preventivi</h2>
@@ -1537,10 +1790,31 @@ function Preventivi() {
             <TextField
               size="small"
               label="Ricerca"
-              placeholder="Numero, cliente, cantiere o oggetto"
+              placeholder="ID cliente, numero, cliente o oggetto"
               value={ricerca}
               onChange={(e) => setRicerca(e.target.value)}
               sx={{ minWidth: 340 }}
+            />
+            <TextField
+              size="small"
+              label="ID Cliente"
+              value={filtroClienteCode}
+              onChange={(e) => setFiltroClienteCode(e.target.value)}
+              sx={{ minWidth: 140 }}
+            />
+            <TextField
+              size="small"
+              label="Cliente"
+              value={filtroCliente}
+              onChange={(e) => setFiltroCliente(e.target.value)}
+              sx={{ minWidth: 180 }}
+            />
+            <TextField
+              size="small"
+              label="Numero Preventivo"
+              value={filtroNumeroPreventivo}
+              onChange={(e) => setFiltroNumeroPreventivo(e.target.value)}
+              sx={{ minWidth: 180 }}
             />
             <FormControl size="small" sx={{ minWidth: 160 }}>
               <InputLabel id="preventivi-filtro-stato">Stato</InputLabel>
@@ -1561,7 +1835,7 @@ function Preventivi() {
           </Stack>
         </Stack>
 
-        <Box sx={{ width: "100%", minHeight: 520 }}>
+        <Box sx={{ width: "100%", minHeight: 520, overflow: "hidden" }}>
           <DataGrid
             rows={righePreventiviGrid}
             columns={colonnePreventiviGrid}
@@ -1577,6 +1851,7 @@ function Preventivi() {
             }}
             sx={{
               border: "1px solid #e2e8f0",
+              width: "100%",
               "& .MuiDataGrid-columnHeaders": {
                 backgroundColor: "#f8fafc",
                 fontWeight: 800,
@@ -1584,10 +1859,14 @@ function Preventivi() {
               "& .MuiDataGrid-cell": {
                 alignItems: "center",
               },
+              "& .MuiDataGrid-cell[data-field='azioni']": {
+                overflow: "visible",
+              },
             }}
           />
         </Box>
       </Paper>
+
     </div>
   );
 }

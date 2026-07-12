@@ -10,6 +10,7 @@ const rapportinoVuoto = {
   data: oggi(),
   ordineNumero: "",
   commessaNumero: "",
+  clienteCode: "",
   cliente: "",
   cantiereId: "",
   cantiere: "",
@@ -140,6 +141,7 @@ function GiornaleCantiere() {
               ...corrente,
               cantiereId: prefill.cantiereId || "",
               cantiere: prefill.cantiere || cantiere?.nome || "",
+              clienteCode: prefill.clienteCode || cantiere?.clienteCode || "",
               cliente: prefill.cliente || cantiere?.cliente || "",
               commessaNumero: generaNumeroCommessa(prefill.cantiereId),
               importo: cantiere?.importo || corrente.importo,
@@ -182,6 +184,7 @@ function GiornaleCantiere() {
       ...nuovoRapportino,
       cantiereId,
       cantiere: cantiere?.nome || "",
+      clienteCode: cantiere?.clienteCode || "",
       cliente: cantiere?.cliente || nuovoRapportino.cliente,
       importo: cantiere?.importo || nuovoRapportino.importo,
     });
@@ -230,6 +233,7 @@ function GiornaleCantiere() {
       data: normalizzaData(rapportino.data) || oggi(),
       ordineNumero: rapportino.ordineNumero || "",
       commessaNumero: rapportino.commessaNumero || "",
+      clienteCode: rapportino.clienteCode || "",
       cliente: rapportino.cliente || "",
       cantiereId: rapportino.cantiereId || "",
       cantiere: rapportino.cantiere || "",
@@ -271,6 +275,7 @@ function GiornaleCantiere() {
       rapportini.filter((rapportino) => {
         const passaStato = filtroStato === "Tutti" || rapportino.stato === filtroStato;
         const passaRicerca = [
+          rapportino.clienteCode,
           rapportino.ordineNumero,
           rapportino.commessaNumero,
           rapportino.cliente,

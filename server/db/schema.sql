@@ -2,13 +2,38 @@
 
 CREATE TABLE IF NOT EXISTS clienti (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cliente_code TEXT NOT NULL DEFAULT '',
   ragione_sociale TEXT NOT NULL,
   referente TEXT,
+  associazione TEXT,
   telefono TEXT,
   email TEXT,
-  partita_iva TEXT,
+  email_referente TEXT,
+  email_amministratore TEXT,
   indirizzo TEXT,
+  cap TEXT,
+  comune TEXT,
+  provincia TEXT,
   note TEXT,
+  tipologia_cliente TEXT,
+  latitudine NUMERIC(10, 7),
+  longitudine NUMERIC(10, 7),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS clienti_cliente_code_uidx
+  ON clienti (LOWER(BTRIM(cliente_code)))
+  WHERE BTRIM(cliente_code) <> '';
+
+CREATE TABLE IF NOT EXISTS indirizzi (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cliente_id UUID NOT NULL REFERENCES clienti(id) ON DELETE CASCADE,
+  via TEXT NOT NULL,
+  civico TEXT,
+  cap TEXT,
+  comune TEXT,
+  principale BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -16,6 +41,10 @@ CREATE TABLE IF NOT EXISTS clienti (
 CREATE TABLE IF NOT EXISTS preventivi (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cliente_id UUID REFERENCES clienti(id) ON DELETE SET NULL,
+  id_indirizzo UUID REFERENCES indirizzi(id) ON DELETE SET NULL,
+  cliente_nome TEXT,
+  cliente_via TEXT,
+  cliente_code TEXT,
   numero TEXT NOT NULL UNIQUE,
   data DATE NOT NULL DEFAULT CURRENT_DATE,
   cliente TEXT,
@@ -30,6 +59,7 @@ CREATE TABLE IF NOT EXISTS cantieri (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   preventivo_id UUID REFERENCES preventivi(id) ON DELETE SET NULL,
   cliente_id UUID REFERENCES clienti(id) ON DELETE SET NULL,
+  cliente_code TEXT,
   nome TEXT NOT NULL,
   cliente TEXT,
   indirizzo TEXT,
@@ -45,6 +75,7 @@ CREATE TABLE IF NOT EXISTS cantieri (
 CREATE TABLE IF NOT EXISTS movimenti_contabili (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cantiere_id UUID REFERENCES cantieri(id) ON DELETE SET NULL,
+  cliente_code TEXT,
   data DATE NOT NULL DEFAULT CURRENT_DATE,
   tipo TEXT NOT NULL CHECK (tipo IN ('Entrata', 'Uscita')),
   cantiere TEXT,
@@ -80,6 +111,7 @@ CREATE TABLE IF NOT EXISTS movimenti_magazzino (
 CREATE TABLE IF NOT EXISTS rapportini (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cantiere_id UUID REFERENCES cantieri(id) ON DELETE SET NULL,
+  cliente_code TEXT,
   cantiere TEXT NOT NULL,
   data DATE NOT NULL DEFAULT CURRENT_DATE,
   capocantiere TEXT,
@@ -97,6 +129,7 @@ CREATE TABLE IF NOT EXISTS rapportini (
 CREATE TABLE IF NOT EXISTS fatture (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cantiere_id UUID REFERENCES cantieri(id) ON DELETE SET NULL,
+  cliente_code TEXT,
   numero TEXT NOT NULL UNIQUE,
   tipo TEXT NOT NULL CHECK (tipo IN ('Attiva', 'Passiva')),
   data DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -112,6 +145,7 @@ CREATE TABLE IF NOT EXISTS fatture (
 CREATE TABLE IF NOT EXISTS sal (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cantiere_id UUID REFERENCES cantieri(id) ON DELETE SET NULL,
+  cliente_code TEXT,
   data DATE NOT NULL DEFAULT CURRENT_DATE,
   cantiere TEXT NOT NULL,
   cliente TEXT,
@@ -126,6 +160,7 @@ CREATE TABLE IF NOT EXISTS sal (
 CREATE TABLE IF NOT EXISTS ordini_materiali (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cantiere_id UUID REFERENCES cantieri(id) ON DELETE SET NULL,
+  cliente_code TEXT,
   numero TEXT NOT NULL UNIQUE,
   data DATE NOT NULL DEFAULT CURRENT_DATE,
   cantiere TEXT,

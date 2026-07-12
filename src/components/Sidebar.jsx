@@ -17,9 +17,12 @@ import {
   HardHat,
   Inbox,
   LayoutDashboard,
+  MapPinned,
+  Map,
   PackageCheck,
   Receipt,
   ShieldCheck,
+  Settings,
   Truck,
   Users,
   Wallet,
@@ -33,10 +36,19 @@ const menuSections = [
     items: [
       { label: "Dashboard", icon: LayoutDashboard, path: "/" },
       { label: "Inbox Lavori", icon: Inbox, path: "/inbox-lavori" },
-      { label: "Clienti", icon: Users, path: "/clienti" },
+      { label: "Anagrafica Clienti", icon: Users, path: "/clienti" },
       { label: "Preventivi", icon: FileText, path: "/preventivi" },
       { label: "Elenco Prezzi", icon: BookOpen, path: "/elenco-prezzi" },
       { label: "Cantieri", icon: Building2, path: "/cantieri" },
+    ],
+  },
+  {
+    title: "Centro Operativo",
+    items: [
+      { label: "Centro Operativo", icon: MapPinned, path: "/centro-operativo" },
+      { label: "Calendario Interventi", icon: CalendarDays, path: "/centro-operativo/calendario-interventi" },
+      { label: "Squadre e Tecnici", icon: Users, path: "/centro-operativo/squadre-tecnici" },
+      { label: "Percorsi e Navigazione", icon: Map, path: "/centro-operativo/percorsi-navigazione" },
     ],
   },
   {
@@ -78,6 +90,12 @@ const menuSections = [
       { label: "Sicurezza PRO", icon: ShieldCheck, path: "/sicurezza" },
       { label: "AI Edile", icon: Bot, path: "/ai-edile" },
       { label: "Report PRO", icon: BarChart3, path: "/report" },
+    ],
+  },
+  {
+    title: "Impostazioni",
+    items: [
+      { label: "Configurazione Sistema", icon: Settings, path: "/impostazioni/configurazione-sistema" },
     ],
   },
 ];

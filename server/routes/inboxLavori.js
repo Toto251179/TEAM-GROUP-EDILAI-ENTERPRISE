@@ -5,7 +5,13 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 const router = Router();
 
 const allowedFields = [
+  "numeroRichiesta",
+  "data",
+  "clienteId",
+  "clienteCode",
   "cliente",
+  "referenteId",
+  "referente",
   "telefono",
   "email",
   "indirizzo",
@@ -41,9 +47,44 @@ function toSnake(field) {
 
 async function ensureInboxTable() {
   await query(`
+    CREATE TABLE IF NOT EXISTS referenti (
+      id SERIAL PRIMARY KEY,
+      nome TEXT NOT NULL,
+      telefono TEXT,
+      email TEXT,
+      ruolo TEXT,
+      note TEXT,
+      attivo BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS clienti_referenti (
+      id SERIAL PRIMARY KEY,
+      cliente_id INTEGER NOT NULL REFERENCES clienti(id) ON DELETE CASCADE,
+      referente_id INTEGER NOT NULL REFERENCES referenti(id) ON DELETE CASCADE,
+      attivo BOOLEAN NOT NULL DEFAULT TRUE,
+      data_inizio TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      data_fine TIMESTAMPTZ,
+      note TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (cliente_id, referente_id)
+    )
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS inbox_lavori (
       id SERIAL PRIMARY KEY,
+      numero_richiesta TEXT UNIQUE,
+      data DATE NOT NULL DEFAULT CURRENT_DATE,
+      cliente_id INTEGER REFERENCES clienti(id) ON DELETE SET NULL,
+      cliente_code TEXT,
       cliente TEXT NOT NULL,
+      referente_id INTEGER REFERENCES referenti(id) ON DELETE SET NULL,
+      referente TEXT,
       telefono TEXT,
       email TEXT,
       indirizzo TEXT,
@@ -59,17 +100,38 @@ async function ensureInboxTable() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+
+  const alters = [
+    "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS numero_richiesta TEXT",
+    "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS data DATE NOT NULL DEFAULT CURRENT_DATE",
+    "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS cliente_id INTEGER",
+    "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS cliente_code TEXT",
+    "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS referente_id INTEGER",
+    "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS referente TEXT",
+    "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS allegati JSONB NOT NULL DEFAULT '[]'::jsonb",
+    "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS storico JSONB NOT NULL DEFAULT '[]'::jsonb",
+    "CREATE UNIQUE INDEX IF NOT EXISTS inbox_lavori_numero_richiesta_uidx ON inbox_lavori (numero_richiesta)",
+  ];
+
+  for (const statement of alters) {
+    await query(statement);
+  }
 }
 
 function sanitizePayload(body) {
-  return allowedFields.reduce((payload, field) => {
-    if (body[field] !== undefined) payload[field] = body[field];
-    return payload;
+  const payload = allowedFields.reduce((current, field) => {
+    if (body[field] !== undefined) current[field] = body[field];
+    return current;
   }, {});
+
+  if (payload.clienteId === "") payload.clienteId = null;
+  if (payload.referenteId === "") payload.referenteId = null;
+  return payload;
 }
 
 async function insertInbox(data) {
   const payload = { ...defaults, ...sanitizePayload(data) };
+  if (!payload.numeroRichiesta) payload.numeroRichiesta = await nextNumeroRichiesta();
   const fields = Object.keys(payload);
   const columns = fields.map(toSnake);
   const values = fields.map((field) => payload[field]);
@@ -80,6 +142,7 @@ async function insertInbox(data) {
     values,
   );
 
+  await linkClienteReferente(payload.clienteId, payload.referenteId);
   return toCamel(result.rows[0]);
 }
 
@@ -100,7 +163,36 @@ async function updateInbox(id, data) {
     [id, ...values],
   );
 
+  await linkClienteReferente(payload.clienteId, payload.referenteId);
   return result.rows[0] ? toCamel(result.rows[0]) : null;
+}
+
+async function nextNumeroRichiesta() {
+  const year = new Date().getFullYear();
+  const result = await query(
+    `SELECT numero_richiesta
+     FROM inbox_lavori
+     WHERE numero_richiesta LIKE $1
+     ORDER BY numero_richiesta DESC
+     LIMIT 1`,
+    [`IN-${year}-%`],
+  );
+
+  const last = result.rows[0]?.numero_richiesta || "";
+  const lastNumber = Number(last.split("-").at(-1) || 0);
+  return `IN-${year}-${String(lastNumber + 1).padStart(4, "0")}`;
+}
+
+async function linkClienteReferente(clienteId, referenteId) {
+  if (!clienteId || !referenteId) return;
+
+  await query(
+    `INSERT INTO clienti_referenti (cliente_id, referente_id, attivo)
+     VALUES ($1, $2, TRUE)
+     ON CONFLICT (cliente_id, referente_id)
+     DO UPDATE SET attivo = TRUE, data_fine = NULL, updated_at = NOW()`,
+    [clienteId, referenteId],
+  );
 }
 
 router.use(asyncHandler(async (_req, _res, next) => {
@@ -127,6 +219,7 @@ router.post("/", asyncHandler(async (req, res) => {
   const item = await insertInbox({
     ...req.body,
     cliente: String(req.body.cliente).trim(),
+    referente: String(req.body.referente || "").trim(),
   });
   res.status(201).json(item);
 }));

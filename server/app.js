@@ -37,8 +37,14 @@ app.use((req, res) => {
 
 app.use((error, req, res, _next) => {
   console.error(error);
-  res.status(500).json({
-    message: "Errore interno del server",
+  const isClienteCodeDuplicate =
+    error.code === "23505" &&
+    String(error.constraint || error.detail || "").includes("cliente_code");
+  const status = isClienteCodeDuplicate ? 409 : Number(error.status || error.statusCode || 500);
+  res.status(status).json({
+    message: isClienteCodeDuplicate
+      ? "ID Cliente già utilizzato."
+      : status >= 500 ? "Errore interno del server" : error.message,
     detail: env.nodeEnv === "development" ? error.message : undefined,
   });
 });

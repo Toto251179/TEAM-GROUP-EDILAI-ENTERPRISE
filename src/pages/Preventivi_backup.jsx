@@ -145,6 +145,14 @@ ${preventivo.stato}`
 
     doc.setFontSize(11);
 
+    const clientePulito = String(preventivo.cliente || "")
+      .replace(/^ID\s*\d+\s*-\s*/i, "")
+      .trim();
+    const viaPreventivo = [
+      preventivo.cliente?.via || preventivo.cliente?.indirizzo || preventivo.via || preventivo.indirizzo?.via || preventivo.indirizzo || "",
+      preventivo.indirizzo?.civico || "",
+    ].filter(Boolean).join(" ");
+
     doc.text(
       `Numero: ${preventivo.numero}`,
       20,
@@ -158,15 +166,21 @@ ${preventivo.stato}`
     );
 
     doc.text(
-      `Cliente: ${preventivo.cliente}`,
+      `Cliente: ${clientePulito}`,
       20,
       75
     );
 
     doc.text(
+      `Via: ${viaPreventivo}`,
+      20,
+      85
+    );
+
+    doc.text(
       "Descrizione lavori:",
       20,
-      90
+      100
     );
 
     const testo = doc.splitTextToSize(
@@ -174,7 +188,7 @@ ${preventivo.stato}`
       160
     );
 
-    doc.text(testo, 20, 100);
+    doc.text(testo, 20, 110);
 
     doc.line(20, 140, 190, 140);
 

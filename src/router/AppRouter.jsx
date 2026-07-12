@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 
 import AIEdile from "../pages/AIEdile.jsx";
 import Attrezzature from "../pages/Attrezzature.jsx";
@@ -6,6 +6,8 @@ import Cantieri from "../pages/Cantieri.jsx";
 import ChiamateTecnici from "../pages/ChiamateTecnici.jsx";
 import ChiamateGiornaliere from "../pages/ChiamateGiornaliere.jsx";
 import Clienti from "../pages/Clienti.jsx";
+import CentroOperativo from "../pages/CentroOperativo.jsx";
+import ConfigurazioneSistema from "../pages/ConfigurazioneSistema.jsx";
 import Contabilita from "../pages/Contabilita.jsx";
 import Consuntivazione from "../pages/Consuntivazione.jsx";
 import ControlloCantieri from "../pages/ControlloCantieri.jsx";
@@ -39,6 +41,11 @@ function AppRouter() {
       <Route path="/" element={<Dashboard />} />
       <Route path="/inbox-lavori" element={<InboxLavori />} />
       <Route path="/clienti" element={<Clienti />} />
+      <Route path="/centro-operativo" element={<CentroOperativo />} />
+      <Route path="/centro-operativo/calendario-interventi" element={<CentroOperativo />} />
+      <Route path="/centro-operativo/squadre-tecnici" element={<CentroOperativo />} />
+      <Route path="/centro-operativo/percorsi-navigazione" element={<CentroOperativo />} />
+      <Route path="/mappa-condomini" element={<Navigate to="/centro-operativo" replace />} />
       <Route path="/preventivi" element={<Preventivi />} />
       <Route path="/elenco-prezzi" element={<ElencoPrezzi />} />
       <Route path="/cantieri" element={<Cantieri />} />
@@ -68,6 +75,7 @@ function AppRouter() {
       <Route path="/sicurezza" element={<Sicurezza />} />
       <Route path="/ai-edile" element={<AIEdile />} />
       <Route path="/report" element={<Report />} />
+      <Route path="/impostazioni/configurazione-sistema" element={<ConfigurazioneSistema />} />
     </Routes>
   );
 }

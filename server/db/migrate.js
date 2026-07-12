@@ -17,24 +17,74 @@ const pool = new pg.Pool({
 
 const statements = [
   "CREATE EXTENSION IF NOT EXISTS pgcrypto",
+  "DROP TABLE IF EXISTS preventivo_invii",
   `CREATE TABLE IF NOT EXISTS clienti (
     id SERIAL PRIMARY KEY,
+    cliente_code TEXT NOT NULL DEFAULT '',
     ragione_sociale TEXT NOT NULL,
     referente TEXT,
+    associazione TEXT,
     telefono TEXT,
     email TEXT,
-    partita_iva TEXT,
+    email_referente TEXT,
+    email_amministratore TEXT,
     indirizzo TEXT,
+    cap TEXT,
+    comune TEXT,
+    provincia TEXT,
     note TEXT,
+    tipologia_cliente TEXT,
+    latitudine NUMERIC(10, 7),
+    longitudine NUMERIC(10, 7),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  "ALTER TABLE clienti ADD COLUMN IF NOT EXISTS partita_iva TEXT",
+  "ALTER TABLE clienti ADD COLUMN IF NOT EXISTS cliente_code TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE clienti ADD COLUMN IF NOT EXISTS associazione TEXT",
+  "UPDATE clienti SET associazione = amministratore WHERE (associazione IS NULL OR BTRIM(associazione) = '') AND amministratore IS NOT NULL AND BTRIM(amministratore) <> ''",
+  "ALTER TABLE clienti ADD COLUMN IF NOT EXISTS email_referente TEXT",
+  "ALTER TABLE clienti ADD COLUMN IF NOT EXISTS email_amministratore TEXT",
+  "ALTER TABLE clienti ADD COLUMN IF NOT EXISTS cap TEXT",
+  "ALTER TABLE clienti ADD COLUMN IF NOT EXISTS comune TEXT",
+  "ALTER TABLE clienti ADD COLUMN IF NOT EXISTS provincia TEXT",
+  "ALTER TABLE clienti ADD COLUMN IF NOT EXISTS tipologia_cliente TEXT",
+  "ALTER TABLE clienti ADD COLUMN IF NOT EXISTS latitudine NUMERIC(10, 7)",
+  "ALTER TABLE clienti ADD COLUMN IF NOT EXISTS longitudine NUMERIC(10, 7)",
   "ALTER TABLE clienti ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
   "ALTER TABLE clienti ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  "CREATE UNIQUE INDEX IF NOT EXISTS clienti_cliente_code_uidx ON clienti (LOWER(BTRIM(cliente_code))) WHERE BTRIM(cliente_code) <> ''",
+  `CREATE TABLE IF NOT EXISTS indirizzi (
+    id SERIAL PRIMARY KEY,
+    cliente_id INTEGER NOT NULL REFERENCES clienti(id) ON DELETE CASCADE,
+    via TEXT NOT NULL,
+    civico TEXT,
+    cap TEXT,
+    comune TEXT,
+    principale BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  "ALTER TABLE indirizzi ADD COLUMN IF NOT EXISTS cliente_id INTEGER",
+  "ALTER TABLE indirizzi ADD COLUMN IF NOT EXISTS via TEXT",
+  "ALTER TABLE indirizzi ADD COLUMN IF NOT EXISTS civico TEXT",
+  "ALTER TABLE indirizzi ADD COLUMN IF NOT EXISTS cap TEXT",
+  "ALTER TABLE indirizzi ADD COLUMN IF NOT EXISTS comune TEXT",
+  "ALTER TABLE indirizzi ADD COLUMN IF NOT EXISTS principale BOOLEAN NOT NULL DEFAULT FALSE",
+  "ALTER TABLE indirizzi ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  "ALTER TABLE indirizzi ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  `INSERT INTO indirizzi (cliente_id, via, principale)
+   SELECT c.id, c.indirizzo, TRUE
+   FROM clienti c
+   WHERE c.indirizzo IS NOT NULL
+     AND BTRIM(c.indirizzo) <> ''
+     AND NOT EXISTS (SELECT 1 FROM indirizzi i WHERE i.cliente_id = c.id)`,
   `CREATE TABLE IF NOT EXISTS preventivi (
     id SERIAL PRIMARY KEY,
     cliente_id INTEGER,
+    id_indirizzo INTEGER,
+    cliente_nome TEXT,
+    cliente_via TEXT,
+    cliente_code TEXT,
     numero TEXT,
     data DATE DEFAULT CURRENT_DATE,
     cliente TEXT,
@@ -47,6 +97,67 @@ const statements = [
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   "ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS cliente_id INTEGER",
+  "ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS id_indirizzo INTEGER",
+  "ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS cliente_nome TEXT",
+  "ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS cliente_via TEXT",
+  "ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS cliente_code TEXT",
+  `UPDATE preventivi p
+   SET cliente_code = COALESCE(NULLIF(p.cliente_code, ''), c.cliente_code),
+       updated_at = NOW()
+   FROM clienti c
+   WHERE p.cliente_id = c.id
+     AND BTRIM(COALESCE(c.cliente_code, '')) <> ''
+     AND (p.cliente_code IS NULL OR BTRIM(p.cliente_code) = '')`,
+  `UPDATE preventivi p
+   SET cliente_nome = COALESCE(NULLIF(p.cliente_nome, ''), c.ragione_sociale),
+       cliente_via = COALESCE(NULLIF(p.cliente_via, ''), c.indirizzo),
+       updated_at = NOW()
+   FROM clienti c
+   WHERE p.cliente_id = c.id
+     AND (
+       p.cliente_nome IS NULL
+       OR BTRIM(p.cliente_nome) = ''
+       OR p.cliente_via IS NULL
+       OR BTRIM(p.cliente_via) = ''
+     )`,
+  `UPDATE preventivi p
+   SET cliente_id = c.id,
+       cliente = c.ragione_sociale,
+       updated_at = NOW()
+   FROM clienti c
+   WHERE p.cliente_id IS NULL
+     AND p.cliente IS NOT NULL
+     AND LOWER(BTRIM(p.cliente)) = LOWER(BTRIM(c.ragione_sociale))`,
+  `DO $$
+   BEGIN
+     IF NOT EXISTS (
+       SELECT 1
+       FROM pg_constraint
+       WHERE conname = 'preventivi_id_indirizzo_fkey'
+     ) THEN
+       ALTER TABLE preventivi
+       ADD CONSTRAINT preventivi_id_indirizzo_fkey
+       FOREIGN KEY (id_indirizzo) REFERENCES indirizzi(id) ON DELETE SET NULL;
+     END IF;
+   END $$`,
+  `UPDATE preventivi p
+   SET id_indirizzo = scelto.id,
+       updated_at = NOW()
+   FROM (
+     SELECT DISTINCT ON (cliente_id) id, cliente_id
+     FROM indirizzi
+     ORDER BY cliente_id, principale DESC, id ASC
+   ) scelto
+   WHERE scelto.cliente_id = p.cliente_id
+     AND (
+       p.id_indirizzo IS NULL
+       OR NOT EXISTS (
+         SELECT 1
+         FROM indirizzi i_ok
+         WHERE i_ok.id = p.id_indirizzo
+           AND i_ok.cliente_id = p.cliente_id
+       )
+     )`,
   "ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS numero TEXT",
   "ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS data DATE DEFAULT CURRENT_DATE",
   "ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS cliente TEXT",
@@ -61,6 +172,7 @@ const statements = [
     id SERIAL PRIMARY KEY,
     preventivo_id INTEGER,
     cliente_id INTEGER,
+    cliente_code TEXT,
     nome TEXT NOT NULL,
     cliente TEXT,
     indirizzo TEXT,
@@ -74,6 +186,7 @@ const statements = [
   )`,
   "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS preventivo_id INTEGER",
   "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS cliente_id INTEGER",
+  "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS nome TEXT",
   "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS cliente TEXT",
   "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS indirizzo TEXT",
@@ -84,9 +197,24 @@ const statements = [
   "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS note TEXT",
   "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
   "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  `UPDATE cantieri ca
+   SET cliente_code = COALESCE(NULLIF(ca.cliente_code, ''), p.cliente_code),
+       updated_at = NOW()
+   FROM preventivi p
+   WHERE ca.preventivo_id = p.id
+     AND BTRIM(COALESCE(p.cliente_code, '')) <> ''
+     AND (ca.cliente_code IS NULL OR BTRIM(ca.cliente_code) = '')`,
+  `UPDATE cantieri ca
+   SET cliente_code = COALESCE(NULLIF(ca.cliente_code, ''), c.cliente_code),
+       updated_at = NOW()
+   FROM clienti c
+   WHERE ca.cliente_id = c.id
+     AND BTRIM(COALESCE(c.cliente_code, '')) <> ''
+     AND (ca.cliente_code IS NULL OR BTRIM(ca.cliente_code) = '')`,
   `CREATE TABLE IF NOT EXISTS rapportini (
     id SERIAL PRIMARY KEY,
     cantiere_id INTEGER REFERENCES cantieri(id) ON DELETE SET NULL,
+    cliente_code TEXT,
     data DATE NOT NULL DEFAULT CURRENT_DATE,
     cantiere TEXT,
     capocantiere TEXT,
@@ -110,6 +238,7 @@ const statements = [
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   "ALTER TABLE rapportini ADD COLUMN IF NOT EXISTS cantiere_id INTEGER",
+  "ALTER TABLE rapportini ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE rapportini ADD COLUMN IF NOT EXISTS data DATE NOT NULL DEFAULT CURRENT_DATE",
   "ALTER TABLE rapportini ADD COLUMN IF NOT EXISTS cantiere TEXT",
   "ALTER TABLE rapportini ADD COLUMN IF NOT EXISTS capocantiere TEXT",
@@ -131,6 +260,13 @@ const statements = [
   "ALTER TABLE rapportini ADD COLUMN IF NOT EXISTS stato TEXT NOT NULL DEFAULT 'In Corso'",
   "ALTER TABLE rapportini ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
   "ALTER TABLE rapportini ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  `UPDATE rapportini r
+   SET cliente_code = ca.cliente_code,
+       updated_at = NOW()
+   FROM cantieri ca
+   WHERE r.cantiere_id = ca.id
+     AND BTRIM(COALESCE(ca.cliente_code, '')) <> ''
+     AND (r.cliente_code IS NULL OR BTRIM(r.cliente_code) = '')`,
   `CREATE TABLE IF NOT EXISTS tecnici_squadre (
     id SERIAL PRIMARY KEY,
     nome TEXT NOT NULL,
@@ -148,6 +284,7 @@ const statements = [
     id SERIAL PRIMARY KEY,
     squadra_id INTEGER REFERENCES tecnici_squadre(id) ON DELETE SET NULL,
     numero_chiamata TEXT NOT NULL,
+    cliente_code TEXT,
     cliente TEXT NOT NULL,
     rif_ticket_cliente TEXT,
     numero_biglietto TEXT,
@@ -170,6 +307,7 @@ const statements = [
   )`,
   "ALTER TABLE chiamate_tecnici ADD COLUMN IF NOT EXISTS squadra_id INTEGER",
   "ALTER TABLE chiamate_tecnici ADD COLUMN IF NOT EXISTS numero_chiamata TEXT",
+  "ALTER TABLE chiamate_tecnici ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE chiamate_tecnici ADD COLUMN IF NOT EXISTS cliente TEXT",
   "ALTER TABLE chiamate_tecnici ADD COLUMN IF NOT EXISTS rif_ticket_cliente TEXT",
   "ALTER TABLE chiamate_tecnici ADD COLUMN IF NOT EXISTS numero_biglietto TEXT",
@@ -204,15 +342,7 @@ const statements = [
   "ALTER TABLE chiamate_tecnici_foto ADD COLUMN IF NOT EXISTS mime_type TEXT",
   "ALTER TABLE chiamate_tecnici_foto ADD COLUMN IF NOT EXISTS data_url TEXT",
   "ALTER TABLE chiamate_tecnici_foto ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
-  `INSERT INTO tecnici_squadre (nome, codice_accesso)
-   VALUES ('Squadra 1', 'TEAMGROUP1')
-   ON CONFLICT (codice_accesso) DO NOTHING`,
-  `INSERT INTO chiamate_tecnici
-   (squadra_id, numero_chiamata, cliente, numero_biglietto, descrizione_lavori, posizione, link_google_maps, stato)
-   SELECT s.id, 'CH-2026-0001', 'Cliente esempio', 'BIG-0001', 'Verifica intervento assegnato alla squadra', 'Bolzano Vicentino (VI)', 'https://www.google.com/maps/search/?api=1&query=Bolzano+Vicentino+VI', 'Assegnato'
-   FROM tecnici_squadre s
-   WHERE s.codice_accesso = 'TEAMGROUP1'
-     AND NOT EXISTS (SELECT 1 FROM chiamate_tecnici WHERE numero_chiamata = 'CH-2026-0001')`,
+  "DELETE FROM chiamate_tecnici WHERE numero_chiamata IN ('CH-2026-0001', 'TG-000001') AND cliente IN ('Cliente esempio', 'IP')",
   `CREATE TABLE IF NOT EXISTS elenco_prezzi (
     id SERIAL PRIMARY KEY,
     codice TEXT NOT NULL,
@@ -276,6 +406,7 @@ const statements = [
   `CREATE TABLE IF NOT EXISTS movimenti_contabili (
     id SERIAL PRIMARY KEY,
     cantiere_id INTEGER,
+    cliente_code TEXT,
     data DATE NOT NULL DEFAULT CURRENT_DATE,
     tipo TEXT NOT NULL DEFAULT 'Entrata',
     cantiere TEXT,
@@ -286,6 +417,7 @@ const statements = [
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   "ALTER TABLE movimenti_contabili ADD COLUMN IF NOT EXISTS cantiere_id INTEGER",
+  "ALTER TABLE movimenti_contabili ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE movimenti_contabili ADD COLUMN IF NOT EXISTS data DATE NOT NULL DEFAULT CURRENT_DATE",
   "ALTER TABLE movimenti_contabili ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'Entrata'",
   "ALTER TABLE movimenti_contabili ADD COLUMN IF NOT EXISTS cantiere TEXT",
@@ -294,9 +426,17 @@ const statements = [
   "ALTER TABLE movimenti_contabili ADD COLUMN IF NOT EXISTS importo NUMERIC(12, 2) NOT NULL DEFAULT 0",
   "ALTER TABLE movimenti_contabili ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
   "ALTER TABLE movimenti_contabili ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  `UPDATE movimenti_contabili m
+   SET cliente_code = ca.cliente_code,
+       updated_at = NOW()
+   FROM cantieri ca
+   WHERE m.cantiere_id = ca.id
+     AND BTRIM(COALESCE(ca.cliente_code, '')) <> ''
+     AND (m.cliente_code IS NULL OR BTRIM(m.cliente_code) = '')`,
   `CREATE TABLE IF NOT EXISTS fatture (
     id SERIAL PRIMARY KEY,
     cantiere_id INTEGER REFERENCES cantieri(id) ON DELETE SET NULL,
+    cliente_code TEXT,
     numero TEXT,
     tipo TEXT NOT NULL DEFAULT 'Attiva',
     data DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -309,6 +449,7 @@ const statements = [
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   "ALTER TABLE fatture ADD COLUMN IF NOT EXISTS cantiere_id INTEGER",
+  "ALTER TABLE fatture ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE fatture ADD COLUMN IF NOT EXISTS numero TEXT",
   "ALTER TABLE fatture ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'Attiva'",
   "ALTER TABLE fatture ADD COLUMN IF NOT EXISTS data DATE NOT NULL DEFAULT CURRENT_DATE",
@@ -319,12 +460,20 @@ const statements = [
   "ALTER TABLE fatture ADD COLUMN IF NOT EXISTS stato TEXT NOT NULL DEFAULT 'Da Pagare'",
   "ALTER TABLE fatture ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
   "ALTER TABLE fatture ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  `UPDATE fatture f
+   SET cliente_code = ca.cliente_code,
+       updated_at = NOW()
+   FROM cantieri ca
+   WHERE f.cantiere_id = ca.id
+     AND BTRIM(COALESCE(ca.cliente_code, '')) <> ''
+     AND (f.cliente_code IS NULL OR BTRIM(f.cliente_code) = '')`,
   "UPDATE fatture SET numero = COALESCE(numero, numero_fattura) WHERE numero_fattura IS NOT NULL",
   "UPDATE fatture SET data = COALESCE(data, data_fattura) WHERE data_fattura IS NOT NULL",
   "UPDATE fatture SET soggetto = COALESCE(soggetto, 'Soggetto non indicato') WHERE soggetto IS NULL",
   `CREATE TABLE IF NOT EXISTS sal (
     id SERIAL PRIMARY KEY,
     cantiere_id INTEGER REFERENCES cantieri(id) ON DELETE SET NULL,
+    cliente_code TEXT,
     data DATE NOT NULL DEFAULT CURRENT_DATE,
     cantiere TEXT,
     cliente TEXT,
@@ -336,6 +485,7 @@ const statements = [
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   "ALTER TABLE sal ADD COLUMN IF NOT EXISTS cantiere_id INTEGER",
+  "ALTER TABLE sal ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE sal ADD COLUMN IF NOT EXISTS data DATE NOT NULL DEFAULT CURRENT_DATE",
   "ALTER TABLE sal ADD COLUMN IF NOT EXISTS cantiere TEXT",
   "ALTER TABLE sal ADD COLUMN IF NOT EXISTS cliente TEXT",
@@ -345,11 +495,55 @@ const statements = [
   "ALTER TABLE sal ADD COLUMN IF NOT EXISTS residuo NUMERIC(12, 2) NOT NULL DEFAULT 0",
   "ALTER TABLE sal ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
   "ALTER TABLE sal ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  `UPDATE sal s
+   SET cliente_code = ca.cliente_code,
+       updated_at = NOW()
+   FROM cantieri ca
+   WHERE s.cantiere_id = ca.id
+     AND BTRIM(COALESCE(ca.cliente_code, '')) <> ''
+     AND (s.cliente_code IS NULL OR BTRIM(s.cliente_code) = '')`,
   "UPDATE sal SET data = COALESCE(data, data_sal) WHERE data_sal IS NOT NULL",
   "UPDATE sal SET maturato = COALESCE(maturato, importo) WHERE importo IS NOT NULL",
+  `CREATE TABLE IF NOT EXISTS referenti (
+    id SERIAL PRIMARY KEY,
+    nome TEXT NOT NULL,
+    telefono TEXT,
+    email TEXT,
+    ruolo TEXT,
+    note TEXT,
+    attivo BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  "ALTER TABLE referenti ADD COLUMN IF NOT EXISTS nome TEXT",
+  "ALTER TABLE referenti ADD COLUMN IF NOT EXISTS telefono TEXT",
+  "ALTER TABLE referenti ADD COLUMN IF NOT EXISTS email TEXT",
+  "ALTER TABLE referenti ADD COLUMN IF NOT EXISTS ruolo TEXT",
+  "ALTER TABLE referenti ADD COLUMN IF NOT EXISTS note TEXT",
+  "ALTER TABLE referenti ADD COLUMN IF NOT EXISTS attivo BOOLEAN NOT NULL DEFAULT TRUE",
+  "ALTER TABLE referenti ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  "ALTER TABLE referenti ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  `CREATE TABLE IF NOT EXISTS clienti_referenti (
+    id SERIAL PRIMARY KEY,
+    cliente_id INTEGER NOT NULL REFERENCES clienti(id) ON DELETE CASCADE,
+    referente_id INTEGER NOT NULL REFERENCES referenti(id) ON DELETE CASCADE,
+    attivo BOOLEAN NOT NULL DEFAULT TRUE,
+    data_inizio TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    data_fine TIMESTAMPTZ,
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (cliente_id, referente_id)
+  )`,
   `CREATE TABLE IF NOT EXISTS inbox_lavori (
     id SERIAL PRIMARY KEY,
+    numero_richiesta TEXT UNIQUE,
+    data DATE NOT NULL DEFAULT CURRENT_DATE,
+    cliente_id INTEGER REFERENCES clienti(id) ON DELETE SET NULL,
+    cliente_code TEXT,
     cliente TEXT NOT NULL,
+    referente_id INTEGER REFERENCES referenti(id) ON DELETE SET NULL,
+    referente TEXT,
     telefono TEXT,
     email TEXT,
     indirizzo TEXT,
@@ -360,11 +554,19 @@ const statements = [
     priorita TEXT NOT NULL DEFAULT 'Media',
     stato TEXT NOT NULL DEFAULT 'Nuova',
     data_creazione TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    allegati JSONB NOT NULL DEFAULT '[]'::jsonb,
+    storico JSONB NOT NULL DEFAULT '[]'::jsonb,
     note TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
+  "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS numero_richiesta TEXT",
+  "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS data DATE NOT NULL DEFAULT CURRENT_DATE",
+  "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS cliente_id INTEGER",
+  "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS cliente TEXT",
+  "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS referente_id INTEGER",
+  "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS referente TEXT",
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS telefono TEXT",
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS email TEXT",
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS indirizzo TEXT",
@@ -375,9 +577,19 @@ const statements = [
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS priorita TEXT NOT NULL DEFAULT 'Media'",
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS stato TEXT NOT NULL DEFAULT 'Nuova'",
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS data_creazione TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS allegati JSONB NOT NULL DEFAULT '[]'::jsonb",
+  "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS storico JSONB NOT NULL DEFAULT '[]'::jsonb",
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS note TEXT",
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  `UPDATE inbox_lavori i
+   SET cliente_code = c.cliente_code,
+       updated_at = NOW()
+   FROM clienti c
+   WHERE i.cliente_id = c.id
+     AND BTRIM(COALESCE(c.cliente_code, '')) <> ''
+     AND (i.cliente_code IS NULL OR BTRIM(i.cliente_code) = '')`,
+  "CREATE UNIQUE INDEX IF NOT EXISTS inbox_lavori_numero_richiesta_uidx ON inbox_lavori (numero_richiesta)",
   `CREATE TABLE IF NOT EXISTS operai (
     id SERIAL PRIMARY KEY,
     nome TEXT NOT NULL,
@@ -440,6 +652,7 @@ const statements = [
   `CREATE TABLE IF NOT EXISTS ordini_materiali (
     id SERIAL PRIMARY KEY,
     cantiere_id INTEGER REFERENCES cantieri(id) ON DELETE SET NULL,
+    cliente_code TEXT,
     numero TEXT NOT NULL UNIQUE,
     data DATE NOT NULL DEFAULT CURRENT_DATE,
     cantiere TEXT,
@@ -452,6 +665,7 @@ const statements = [
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   "ALTER TABLE ordini_materiali ADD COLUMN IF NOT EXISTS cantiere_id INTEGER",
+  "ALTER TABLE ordini_materiali ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE ordini_materiali ADD COLUMN IF NOT EXISTS numero TEXT",
   "ALTER TABLE ordini_materiali ADD COLUMN IF NOT EXISTS data DATE NOT NULL DEFAULT CURRENT_DATE",
   "ALTER TABLE ordini_materiali ADD COLUMN IF NOT EXISTS cantiere TEXT",
@@ -462,6 +676,117 @@ const statements = [
   "ALTER TABLE ordini_materiali ADD COLUMN IF NOT EXISTS stato TEXT NOT NULL DEFAULT 'Da Ordinare'",
   "ALTER TABLE ordini_materiali ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
   "ALTER TABLE ordini_materiali ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+  `UPDATE ordini_materiali o
+   SET cliente_code = ca.cliente_code,
+       updated_at = NOW()
+   FROM cantieri ca
+   WHERE o.cantiere_id = ca.id
+     AND BTRIM(COALESCE(ca.cliente_code, '')) <> ''
+     AND (o.cliente_code IS NULL OR BTRIM(o.cliente_code) = '')`,
+  `WITH duplicati AS (
+     SELECT vuoto.id AS old_id, codificato.id AS keep_id
+     FROM clienti vuoto
+     JOIN clienti codificato
+       ON LOWER(BTRIM(vuoto.ragione_sociale)) = LOWER(BTRIM(codificato.ragione_sociale))
+      AND vuoto.id <> codificato.id
+     WHERE BTRIM(COALESCE(vuoto.cliente_code, '')) = ''
+       AND BTRIM(COALESCE(codificato.cliente_code, '')) <> ''
+   )
+   UPDATE preventivi p
+   SET cliente_id = d.keep_id,
+       updated_at = NOW()
+   FROM duplicati d
+   WHERE p.cliente_id = d.old_id`,
+  `WITH duplicati AS (
+     SELECT vuoto.id AS old_id, codificato.id AS keep_id
+     FROM clienti vuoto
+     JOIN clienti codificato
+       ON LOWER(BTRIM(vuoto.ragione_sociale)) = LOWER(BTRIM(codificato.ragione_sociale))
+      AND vuoto.id <> codificato.id
+     WHERE BTRIM(COALESCE(vuoto.cliente_code, '')) = ''
+       AND BTRIM(COALESCE(codificato.cliente_code, '')) <> ''
+   )
+   UPDATE cantieri ca
+   SET cliente_id = d.keep_id,
+       updated_at = NOW()
+   FROM duplicati d
+   WHERE ca.cliente_id = d.old_id`,
+  `WITH duplicati AS (
+     SELECT vuoto.id AS old_id, codificato.id AS keep_id
+     FROM clienti vuoto
+     JOIN clienti codificato
+       ON LOWER(BTRIM(vuoto.ragione_sociale)) = LOWER(BTRIM(codificato.ragione_sociale))
+      AND vuoto.id <> codificato.id
+     WHERE BTRIM(COALESCE(vuoto.cliente_code, '')) = ''
+       AND BTRIM(COALESCE(codificato.cliente_code, '')) <> ''
+   )
+   UPDATE inbox_lavori i
+   SET cliente_id = d.keep_id,
+       updated_at = NOW()
+   FROM duplicati d
+   WHERE i.cliente_id = d.old_id`,
+  `WITH duplicati AS (
+     SELECT vuoto.id AS old_id
+     FROM clienti vuoto
+     JOIN clienti codificato
+       ON LOWER(BTRIM(vuoto.ragione_sociale)) = LOWER(BTRIM(codificato.ragione_sociale))
+      AND vuoto.id <> codificato.id
+     WHERE BTRIM(COALESCE(vuoto.cliente_code, '')) = ''
+       AND BTRIM(COALESCE(codificato.cliente_code, '')) <> ''
+   )
+   DELETE FROM clienti c
+   USING duplicati d
+   WHERE c.id = d.old_id`,
+  `UPDATE clienti
+   SET cliente_code = 'AUTO-' || LPAD(id::TEXT, 5, '0'),
+       updated_at = NOW()
+   WHERE BTRIM(COALESCE(cliente_code, '')) = ''`,
+  `UPDATE preventivi p
+   SET cliente_code = c.cliente_code,
+       cliente_nome = COALESCE(NULLIF(p.cliente_nome, ''), c.ragione_sociale),
+       cliente = COALESCE(NULLIF(p.cliente, ''), c.ragione_sociale),
+       cliente_via = COALESCE(NULLIF(p.cliente_via, ''), c.indirizzo),
+       updated_at = NOW()
+   FROM clienti c
+   WHERE p.cliente_id = c.id
+     AND (
+       p.cliente_code IS DISTINCT FROM c.cliente_code
+       OR p.cliente_code IS NULL
+       OR BTRIM(p.cliente_code) = ''
+     )`,
+  `UPDATE cantieri ca
+   SET cliente_code = c.cliente_code,
+       cliente = COALESCE(NULLIF(ca.cliente, ''), c.ragione_sociale),
+       indirizzo = COALESCE(NULLIF(ca.indirizzo, ''), c.indirizzo),
+       updated_at = NOW()
+   FROM clienti c
+   WHERE ca.cliente_id = c.id
+     AND (
+       ca.cliente_code IS DISTINCT FROM c.cliente_code
+       OR ca.cliente_code IS NULL
+       OR BTRIM(ca.cliente_code) = ''
+     )`,
+  `UPDATE inbox_lavori i
+   SET cliente_code = c.cliente_code,
+       cliente = COALESCE(NULLIF(i.cliente, ''), c.ragione_sociale),
+       indirizzo = COALESCE(NULLIF(i.indirizzo, ''), c.indirizzo),
+       updated_at = NOW()
+   FROM clienti c
+   WHERE i.cliente_id = c.id
+     AND (
+       i.cliente_code IS DISTINCT FROM c.cliente_code
+       OR i.cliente_code IS NULL
+       OR BTRIM(i.cliente_code) = ''
+     )`,
+  `DELETE FROM chiamate_tecnici
+   WHERE numero_chiamata IN ('CH-2026-0001', 'TG-000001')
+     AND cliente IN ('Cliente esempio', 'IP')`,
+  `DELETE FROM tecnici_operatori
+   WHERE nome IN ('Amir', 'Shefi')
+     AND cognome = ''
+     AND telefono = ''
+     AND email = ''
+     AND qualifica = 'Tecnico'`,
   `GRANT USAGE ON SCHEMA public TO ${env.db.user}`,
   `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${env.db.user}`,
   `GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO ${env.db.user}`,

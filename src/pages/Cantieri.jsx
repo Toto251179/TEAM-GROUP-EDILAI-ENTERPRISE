@@ -6,6 +6,7 @@ const STATI = ["In Corso", "Sospeso", "Completato"];
 const cantiereVuoto = {
   id: null,
   clienteId: "",
+  clienteCode: "",
   nome: "",
   cliente: "",
   indirizzo: "",
@@ -80,7 +81,7 @@ function Cantieri() {
   const cantieriFiltrati = useMemo(
     () =>
       cantieri.filter((cantiere) => {
-        const testo = [cantiere.nome, cantiere.cliente, cantiere.indirizzo, cantiere.stato, cantiere.note]
+        const testo = [cantiere.clienteCode, cantiere.nome, cantiere.cliente, cantiere.indirizzo, cantiere.stato, cantiere.note]
           .join(" ")
           .toLowerCase();
         const passaRicerca = testo.includes(ricerca.toLowerCase());
@@ -112,6 +113,7 @@ function Cantieri() {
     setForm((corrente) => ({
       ...corrente,
       clienteId,
+      clienteCode: cliente?.clienteCode || "",
       cliente: cliente?.ragioneSociale || corrente.cliente,
       indirizzo: cliente?.indirizzo || corrente.indirizzo,
     }));
@@ -132,6 +134,7 @@ function Cantieri() {
 
     const payload = {
       clienteId: form.clienteId || null,
+      clienteCode: form.clienteCode || "",
       nome: form.nome.trim(),
       cliente: form.cliente.trim(),
       indirizzo: form.indirizzo.trim(),
@@ -161,6 +164,7 @@ function Cantieri() {
     setForm({
       id: cantiere.id,
       clienteId: cantiere.clienteId || "",
+      clienteCode: cantiere.clienteCode || "",
       nome: cantiere.nome || "",
       cliente: cantiere.cliente || "",
       indirizzo: cantiere.indirizzo || "",

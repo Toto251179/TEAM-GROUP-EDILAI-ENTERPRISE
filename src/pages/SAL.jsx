@@ -5,6 +5,7 @@ import { generaPDFSAL } from "../utils/pdfSAL.js";
 const salVuoto = {
   id: null,
   cantiereId: "",
+  clienteCode: "",
   data: new Date().toISOString().split("T")[0],
   cantiere: "",
   cliente: "",
@@ -93,7 +94,7 @@ function SAL() {
   const salFiltrati = useMemo(
     () =>
       sal.filter((item) =>
-        [item.cantiere, item.cliente, item.data, item.percentuale]
+        [item.clienteCode, item.cantiere, item.cliente, item.data, item.percentuale]
           .join(" ")
           .toLowerCase()
           .includes(ricerca.toLowerCase()),
@@ -124,6 +125,7 @@ function SAL() {
     setForm((corrente) => ({
       ...corrente,
       cantiereId,
+      clienteCode: cantiere?.clienteCode || "",
       cantiere: cantiere?.nome || "",
       cliente: cantiere?.cliente || "",
       contratto: cantiere?.importo || corrente.contratto,
@@ -155,6 +157,7 @@ function SAL() {
 
     const payload = {
       cantiereId: form.cantiereId ? Number(form.cantiereId) : null,
+      clienteCode: form.clienteCode || "",
       data: form.data,
       cantiere: form.cantiere,
       cliente: form.cliente,
@@ -183,6 +186,7 @@ function SAL() {
     setForm({
       id: item.id,
       cantiereId: item.cantiereId || "",
+      clienteCode: item.clienteCode || "",
       data: normalizzaData(item.data) || new Date().toISOString().split("T")[0],
       cantiere: item.cantiere || "",
       cliente: item.cliente || "",
@@ -219,6 +223,7 @@ function SAL() {
         tipo: "Attiva",
         data: new Date().toISOString().split("T")[0],
         cantiereId: item.cantiereId || null,
+        clienteCode: item.clienteCode || "",
         cantiere: item.cantiere,
         soggetto: item.cliente,
         importo: Number(item.maturato || 0),

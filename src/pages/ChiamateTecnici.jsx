@@ -140,7 +140,7 @@ function ChiamateTecnici() {
           Il CSV deve usare il separatore punto e virgola. Il campo Progressivo diventa il numero chiamata e non viene duplicato se gia presente.
         </p>
         <div style={{ border: "1px dashed var(--enterprise-border-soft)", borderRadius: "8px", padding: "12px", marginBottom: "12px", background: "#f8fafc" }}>
-          <strong>Importa anagrafica condomini/clienti</strong>
+          <strong>Importa anagrafica clienti</strong>
           <p style={{ color: "var(--enterprise-muted)", margin: "6px 0 0" }}>
             Funzione futura: ID cliente - nome cliente - indirizzo - referente - telefono - email.
           </p>

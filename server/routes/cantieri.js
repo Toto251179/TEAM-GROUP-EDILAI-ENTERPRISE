@@ -3,7 +3,7 @@ import { createCrudRouter } from "./createCrudRouter.js";
 
 const repository = createCrudRepository({
   table: "cantieri",
-  allowedFields: ["preventivoId", "clienteId", "nome", "cliente", "indirizzo", "dataInizio", "dataFinePrevista", "importo", "stato", "note"],
+  allowedFields: ["preventivoId", "clienteId", "clienteCode", "nome", "cliente", "indirizzo", "dataInizio", "dataFinePrevista", "importo", "stato", "note"],
   defaultOrder: "created_at DESC",
 });
 

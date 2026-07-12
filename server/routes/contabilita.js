@@ -5,7 +5,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 
 const repository = createCrudRepository({
   table: "movimenti_contabili",
-  allowedFields: ["cantiereId", "data", "tipo", "cantiere", "categoria", "descrizione", "importo"],
+  allowedFields: ["cantiereId", "clienteCode", "data", "tipo", "cantiere", "categoria", "descrizione", "importo"],
   defaultOrder: "data DESC, created_at DESC",
 });
 

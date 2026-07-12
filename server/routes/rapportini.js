@@ -5,6 +5,7 @@ const repository = createCrudRepository({
   table: "rapportini",
   allowedFields: [
     "cantiereId",
+    "clienteCode",
     "cantiere",
     "data",
     "capocantiere",

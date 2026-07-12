@@ -96,6 +96,7 @@ async function ensureSchemaUfficio() {
     schemaUfficioPromise = (async () => {
       await query("ALTER TABLE tecnici_squadre ADD COLUMN IF NOT EXISTS colore TEXT NOT NULL DEFAULT '#1565c0'");
       await query("ALTER TABLE tecnici_squadre ADD COLUMN IF NOT EXISTS mezzo_assegnato TEXT");
+      await query("ALTER TABLE chiamate_tecnici ADD COLUMN IF NOT EXISTS cliente_code TEXT");
       await query("ALTER TABLE chiamate_tecnici ADD COLUMN IF NOT EXISTS coordinate TEXT");
       await query("ALTER TABLE chiamate_tecnici ADD COLUMN IF NOT EXISTS dipendenti_presenti TEXT");
       await query("ALTER TABLE chiamate_tecnici ADD COLUMN IF NOT EXISTS ore_lavorate NUMERIC DEFAULT 0");
@@ -172,39 +173,6 @@ async function ensureSchemaUfficio() {
       await query("ALTER TABLE tecnici_operatori ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
       await query("CREATE UNIQUE INDEX IF NOT EXISTS tecnici_operatori_operaio_id_unique ON tecnici_operatori(operaio_id) WHERE operaio_id IS NOT NULL");
 
-      const tecniciCount = await query("SELECT COUNT(*)::INTEGER AS totale FROM tecnici_operatori");
-      if (Number(tecniciCount.rows[0]?.totale || 0) === 0) {
-        const squadra = await query(
-          `INSERT INTO tecnici_squadre (nome, codice_accesso, colore, mezzo_assegnato, attiva)
-           VALUES ('AMIR - SHEFI', 'AMIRSHEFI', '#1565c0', '', TRUE)
-           ON CONFLICT (codice_accesso) DO UPDATE SET nome = EXCLUDED.nome
-           RETURNING id`,
-        );
-        const squadraId = squadra.rows[0].id;
-
-        await query(
-          `INSERT INTO tecnici_operatori (squadra_id, nome, cognome, telefono, email, qualifica, lingua, stato)
-           VALUES
-           ($1, 'Amir', '', '', '', 'Tecnico', 'Italiano', 'Attivo'),
-           ($1, 'Shefi', '', '', '', 'Tecnico', 'Italiano', 'Attivo')`,
-          [squadraId],
-        );
-
-        await query(
-          `INSERT INTO chiamate_tecnici
-           (squadra_id, numero_chiamata, cliente, rif_ticket_cliente, numero_biglietto, cod_prog,
-            descrizione_lavori, posizione, indirizzo, link_google_maps, stato, note_ufficio)
-           SELECT $1, 'TG-000001', 'Cliente esempio', '', 'TK-0001', 'PRG-001',
-                  'Chiamata di esempio assegnata alla squadra AMIR - SHEFI',
-                  'Bolzano Vicentino (VI)',
-                  'Via dell''Artigianato, 22 - Bolzano Vicentino (VI)',
-                  'https://www.google.com/maps/search/?api=1&query=Via+dell+Artigianato+22+Bolzano+Vicentino+VI',
-                  'Assegnato',
-                  'Chiamata iniziale di esempio.'
-           WHERE NOT EXISTS (SELECT 1 FROM chiamate_tecnici WHERE numero_chiamata = 'TG-000001')`,
-          [squadraId],
-        );
-      }
     })();
   }
 
@@ -553,6 +521,7 @@ router.get("/ufficio/chiamate", asyncHandler(async (req, res) => {
     filtri.push(`(
       LOWER(c.numero_chiamata) LIKE $${params.length}
       OR LOWER(c.cliente) LIKE $${params.length}
+      OR LOWER(COALESCE(c.cliente_code, '')) LIKE $${params.length}
       OR LOWER(COALESCE(c.rif_ticket_cliente, '')) LIKE $${params.length}
       OR LOWER(COALESCE(c.numero_biglietto, '')) LIKE $${params.length}
       OR LOWER(COALESCE(c.cod_prog, '')) LIKE $${params.length}
@@ -601,8 +570,8 @@ router.post("/ufficio/chiamate", asyncHandler(async (req, res) => {
   const result = await query(
     `INSERT INTO chiamate_tecnici
      (squadra_id, numero_chiamata, cliente, rif_ticket_cliente, numero_biglietto, cod_prog,
-      descrizione_lavori, posizione, indirizzo, link_google_maps, stato, note_ufficio)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, 'Assegnato'), $12)
+      cliente_code, descrizione_lavori, posizione, indirizzo, link_google_maps, stato, note_ufficio)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12, 'Assegnato'), $13)
      RETURNING *`,
     [
       req.body.squadraId || null,
@@ -611,6 +580,7 @@ router.post("/ufficio/chiamate", asyncHandler(async (req, res) => {
       req.body.rifTicketCliente || null,
       req.body.numeroBiglietto || null,
       req.body.codProg || null,
+      req.body.clienteCode || "",
       req.body.descrizioneLavori || "",
       req.body.posizione || req.body.indirizzo || "",
       req.body.indirizzo || "",
@@ -640,12 +610,13 @@ router.put("/ufficio/chiamate/:id", asyncHandler(async (req, res) => {
          rif_ticket_cliente = $5,
          numero_biglietto = $6,
          cod_prog = $7,
-         descrizione_lavori = $8,
-         posizione = $9,
-         indirizzo = $10,
-         link_google_maps = $11,
-         stato = $12,
-         note_ufficio = $13,
+         cliente_code = $8,
+         descrizione_lavori = $9,
+         posizione = $10,
+         indirizzo = $11,
+         link_google_maps = $12,
+         stato = $13,
+         note_ufficio = $14,
          updated_at = NOW()
      WHERE id = $1
      RETURNING *`,
@@ -657,6 +628,7 @@ router.put("/ufficio/chiamate/:id", asyncHandler(async (req, res) => {
       req.body.rifTicketCliente || null,
       req.body.numeroBiglietto || null,
       req.body.codProg || null,
+      req.body.clienteCode || chiamata.clienteCode || "",
       req.body.descrizioneLavori || "",
       req.body.posizione || req.body.indirizzo || "",
       req.body.indirizzo || "",
@@ -747,6 +719,7 @@ router.get("/storico", autenticaSquadra, asyncHandler(async (req, res) => {
     filtro = `AND (
       LOWER(cliente) LIKE $2
       OR LOWER(numero_chiamata) LIKE $2
+      OR LOWER(COALESCE(cliente_code, '')) LIKE $2
       OR LOWER(COALESCE(rif_ticket_cliente, '')) LIKE $2
       OR LOWER(COALESCE(numero_biglietto, '')) LIKE $2
       OR LOWER(COALESCE(cod_prog, '')) LIKE $2

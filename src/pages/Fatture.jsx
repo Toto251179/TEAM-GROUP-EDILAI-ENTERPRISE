@@ -13,6 +13,7 @@ const fatturaVuota = {
   tipo: "Attiva",
   data: new Date().toISOString().split("T")[0],
   cantiereId: "",
+  clienteCode: "",
   cantiere: "",
   soggetto: "",
   importo: "",
@@ -115,7 +116,7 @@ function Fatture() {
   const fattureFiltrate = useMemo(
     () =>
       fatture.filter((fattura) => {
-        const testo = [fattura.numero, fattura.tipo, fattura.cantiere, fattura.soggetto, statoEffettivo(fattura)]
+        const testo = [fattura.clienteCode, fattura.numero, fattura.tipo, fattura.cantiere, fattura.soggetto, statoEffettivo(fattura)]
           .join(" ")
           .toLowerCase();
         const passaRicerca = testo.includes(ricerca.toLowerCase());
@@ -159,6 +160,7 @@ function Fatture() {
     setForm((corrente) => ({
       ...corrente,
       cantiereId,
+      clienteCode: cantiere?.clienteCode || corrente.clienteCode || "",
       cantiere: cantiere?.nome || "",
       soggetto: corrente.soggetto || cantiere?.cliente || "",
     }));
@@ -186,6 +188,7 @@ function Fatture() {
       tipo: form.tipo,
       data: form.data,
       cantiereId: form.cantiereId ? Number(form.cantiereId) : null,
+      clienteCode: form.clienteCode || "",
       cantiere: form.cantiere,
       soggetto: form.soggetto,
       importo: Number(form.importo || 0),
@@ -215,6 +218,7 @@ function Fatture() {
       tipo: fattura.tipo || "Attiva",
       data: normalizzaData(fattura.data) || new Date().toISOString().split("T")[0],
       cantiereId: fattura.cantiereId || "",
+      clienteCode: fattura.clienteCode || "",
       cantiere: fattura.cantiere || "",
       soggetto: fattura.soggetto || "",
       importo: fattura.importo || "",

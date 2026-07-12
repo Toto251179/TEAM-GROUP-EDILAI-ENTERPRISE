@@ -12,6 +12,10 @@ import operai from "./operai.js";
 import elencoPrezzi from "./elencoPrezzi.js";
 import tecnici from "./tecnici.js";
 import inboxLavori from "./inboxLavori.js";
+import referenti from "./referenti.js";
+import condomini from "./condomini.js";
+import centroOperativo from "./centroOperativo.js";
+import systemSettings from "./systemSettings.js";
 
 const router = Router();
 
@@ -28,5 +32,9 @@ router.use("/operai", operai);
 router.use("/elenco-prezzi", elencoPrezzi);
 router.use("/tecnici", tecnici);
 router.use("/inbox-lavori", inboxLavori);
+router.use("/referenti", referenti);
+router.use("/condomini", condomini);
+router.use("/centro-operativo", centroOperativo);
+router.use("/system-settings", systemSettings);
 
 export default router;

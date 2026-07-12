@@ -6,16 +6,12 @@ import autoTable from "jspdf-autotable";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
-const outputDir = process.argv[2];
+const outputDir = process.argv[2] || path.join(rootDir, "public", "preventivi");
 
 const azienda = {
   ragioneSociale: "TEAM GROUP SRL",
   sede: "Via dell'Artigianato, 22 - 36050 Bolzano Vicentino (VI)",
 };
-
-if (!outputDir) {
-  throw new Error("Indica la cartella di destinazione.");
-}
 
 function formatEuro(value) {
   const importo = Number(value || 0).toLocaleString("it-IT", {
@@ -48,6 +44,87 @@ function formatNumeroPreventivo(numero) {
   const revisioneTrovata = valore.match(/\bRev[._\s-]*(\d+)/i)?.[1];
   const revisione = revisioneTrovata && revisioneTrovata.length <= 2 ? revisioneTrovata : "00";
   return `PREV-${match[1]} -Rev${String(revisione).padStart(2, "0")}`;
+}
+
+function formatViaCivico(indirizzo) {
+  if (!indirizzo) return "";
+  return [indirizzo.via, indirizzo.civico].filter(Boolean).join(" ");
+}
+
+function getClienteNome(preventivo, clientiArchivio = []) {
+  const cliente = preventivo.cliente;
+  const clienteId = preventivo.clienteId || preventivo.idCliente || cliente?.id;
+  const clienteDaArchivio = clientiArchivio.find((item) => String(item.id) === String(clienteId));
+  const nomeCliente = typeof cliente === "object" && cliente !== null
+    ? cliente.ragioneSociale || cliente.ragione_sociale || cliente.nome || cliente.denominazione || ""
+    : cliente;
+  return String(
+    nomeCliente ||
+    preventivo.clienteNome ||
+    preventivo.nomeCliente ||
+    clienteDaArchivio?.ragioneSociale ||
+    clienteDaArchivio?.ragione_sociale ||
+    clienteDaArchivio?.nome ||
+    "",
+  ).replace(/^ID\s*\d+\s*-\s*/i, "").trim();
+}
+
+function normalizzaViaPreventivo(value) {
+  if (!value) return "";
+  if (typeof value === "object") {
+    return [value.via || value.indirizzo || "", value.civico || ""].filter(Boolean).join(" ");
+  }
+  return String(value).trim();
+}
+
+function getClienteVia(preventivo, clientiArchivio = []) {
+  const clienteId = preventivo.clienteId || preventivo.idCliente || preventivo.cliente?.id;
+  const clienteDaArchivio = clientiArchivio.find((item) => String(item.id) === String(clienteId));
+
+  return (
+    normalizzaViaPreventivo(preventivo.clienteVia) ||
+    normalizzaViaPreventivo(preventivo.cliente?.via) ||
+    normalizzaViaPreventivo(preventivo.cliente?.indirizzo) ||
+    normalizzaViaPreventivo(preventivo.cliente?.address) ||
+    normalizzaViaPreventivo(preventivo.cliente?.sede) ||
+    normalizzaViaPreventivo(clienteDaArchivio?.via) ||
+    normalizzaViaPreventivo(clienteDaArchivio?.indirizzo) ||
+    normalizzaViaPreventivo(clienteDaArchivio?.address) ||
+    normalizzaViaPreventivo(clienteDaArchivio?.sede) ||
+    normalizzaViaPreventivo(preventivo.via) ||
+    normalizzaViaPreventivo(preventivo.indirizzo)
+  );
+}
+
+function getClienteCode(preventivo, clientiArchivio = []) {
+  const clienteId = preventivo.clienteId || preventivo.idCliente || preventivo.cliente?.id;
+  const clienteDaArchivio = clientiArchivio.find((item) => String(item.id) === String(clienteId));
+  const nomePreventivo = String(preventivo.clienteNome || preventivo.cliente || "").trim().toLowerCase();
+  const clienteDaNome = clientiArchivio.find(
+    (item) => String(item.ragioneSociale || item.ragione_sociale || item.nome || "").trim().toLowerCase() === nomePreventivo,
+  );
+
+  return String(
+    preventivo.clienteCode ||
+    preventivo.cliente?.clienteCode ||
+    clienteDaArchivio?.clienteCode ||
+    clienteDaNome?.clienteCode ||
+    "",
+  ).trim();
+}
+
+function disegnaRiquadroClienteCode(doc, clienteCode) {
+  if (!clienteCode) return;
+  const x = 164;
+  const y = 16;
+  const width = 36;
+  const height = 18;
+  doc.setDrawColor(30, 41, 59);
+  doc.setLineWidth(0.3);
+  doc.rect(x, y, width, height);
+  doc.setFontSize(8);
+  doc.setFont(undefined, "bold");
+  doc.text(String(clienteCode), x + width / 2, y + height / 2 + 1, { align: "center" });
 }
 
 function calcolaQuantitaRiga(riga) {
@@ -93,6 +170,19 @@ function safeFileName(name) {
   return String(name || "preventivo").replace(/[<>:"/\\|?*]+/g, "-").replace(/\s+/g, " ").trim();
 }
 
+async function rimuoviPdfPrecedenti(numero, fileNameFinale) {
+  const prefissoNumero = safeFileName(numero);
+  const files = await fs.readdir(outputDir).catch(() => []);
+
+  await Promise.all(
+    files
+      .filter((file) => file.toLowerCase().endsWith(".pdf"))
+      .filter((file) => file !== fileNameFinale)
+      .filter((file) => file.startsWith(prefissoNumero))
+      .map((file) => fs.unlink(path.join(outputDir, file))),
+  );
+}
+
 async function disegnaLogo(doc, y) {
   const logoDataUrl = await caricaLogoDataUrl();
   const props = doc.getImageProperties(logoDataUrl);
@@ -104,13 +194,14 @@ async function disegnaLogo(doc, y) {
   doc.addImage(logoDataUrl, "JPEG", 14, y - height + 7, width, height);
 }
 
-async function generaPdf(preventivo) {
+async function generaPdf(preventivo, clientiArchivio = []) {
   const doc = new jsPDF();
   const righe = preventivo.righe || [];
   const totaliPdf = calcolaTotali(righe, preventivo.ivaAliquota);
   let y = 18;
 
   await disegnaLogo(doc, y);
+  disegnaRiquadroClienteCode(doc, getClienteCode(preventivo, clientiArchivio));
   y = 42;
 
   doc.setFontSize(12);
@@ -121,8 +212,8 @@ async function generaPdf(preventivo) {
   y += 10;
 
   const dettagli = [
-    ["Cliente:", preventivo.cliente || ""],
-    ["Indirizzo:", preventivo.cantiere || ""],
+    ["Cliente:", getClienteNome(preventivo, clientiArchivio)],
+    ["Via:", getClienteVia(preventivo, clientiArchivio)],
     ["Oggetto:", preventivo.descrizione || ""],
     ["Commessa:", formatNumeroPreventivo(preventivo.numero)],
   ];
@@ -217,6 +308,7 @@ async function generaPdf(preventivo) {
 
   const tabellaComputo = doc.lastAutoTable;
   y = tabellaComputo.finalY;
+
   if (y > 235) {
     doc.addPage();
     y = 20;
@@ -335,23 +427,19 @@ async function generaPdf(preventivo) {
 const response = await fetch("http://127.0.0.1:3001/api/preventivi");
 if (!response.ok) throw new Error(`Impossibile leggere i preventivi: ${response.status}`);
 const preventivi = await response.json();
+const clientiResponse = await fetch("http://127.0.0.1:3001/api/clienti");
+const clienti = clientiResponse.ok ? await clientiResponse.json() : [];
 
 await fs.mkdir(outputDir, { recursive: true });
 
 for (const preventivo of preventivi) {
   const numero = formatNumeroPreventivo(preventivo.numero);
-  const cliente = preventivo.cliente ? ` - ${preventivo.cliente}` : "";
-  const filePath = path.join(outputDir, `${safeFileName(numero + cliente)}.pdf`);
-  const buffer = await generaPdf(preventivo);
-  try {
-    await fs.writeFile(filePath, buffer);
-    console.log(filePath);
-  } catch (error) {
-    if (error.code !== "EBUSY") throw error;
-    const fallbackPath = path.join(outputDir, `${safeFileName(numero + cliente)} - aggiornato.pdf`);
-    await fs.writeFile(fallbackPath, buffer);
-    console.log(`${fallbackPath} (file originale aperto/bloccato)`);
-  }
+  const fileName = `${safeFileName(numero)}.pdf`;
+  const filePath = path.join(outputDir, fileName);
+  const buffer = await generaPdf(preventivo, clienti);
+  await rimuoviPdfPrecedenti(numero, fileName);
+  await fs.writeFile(filePath, buffer);
+  console.log(filePath);
 }
 
-console.log(`Esportati ${preventivi.length} preventivi.`);
+console.log(`Rigenerati ${preventivi.length} preventivi in ${outputDir}.`);

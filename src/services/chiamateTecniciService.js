@@ -15,45 +15,6 @@ function generaGoogleMapsLink(indirizzo, comune, provincia) {
   return query ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query).replace(/%20/g, "+")}` : "";
 }
 
-const chiamataDemo = {
-  id: "chiamata-demo-1",
-  numero: "TG-000001",
-  idCliente: "IP",
-  cliente: "IP",
-  clienteAssociato: "IP",
-  ticketCliente: "TICKET-DEMO",
-  codiceProgramma: "CP-DEMO",
-  comune: "Bolzano Vicentino",
-  provincia: "VI",
-  indirizzo: "Via dell'Artigianato, 22 - Bolzano Vicentino (VI)",
-  indirizzoCompleto: "Via dell'Artigianato, 22 - Bolzano Vicentino (VI)",
-  linkGoogleMaps: generaGoogleMapsLink("Via dell'Artigianato, 22", "Bolzano Vicentino", "VI"),
-  coordinate: "",
-  descrizione: "Chiamata demo assegnata alla squadra AMIR - SHEFI.",
-  noteUfficio: "Verificare intervento e compilare rapportino.",
-  squadraId: "squadra-amir-shefi",
-  statoAssegnazione: "ASSEGNATO",
-  stato: "Assegnata",
-  oraArrivo: "",
-  oraFine: "",
-  foto: [],
-  rapportino: "",
-  categoria: "",
-  priorita: "",
-  dataApertura: "",
-  importoPreventivo: "",
-  importoConsuntivo: "",
-  fonte: "Demo",
-  storicoAssegnazioni: [
-    {
-      data: new Date().toISOString(),
-      squadraId: "squadra-amir-shefi",
-      squadraNome: "AMIR - SHEFI",
-      azione: "Assegnazione demo",
-    },
-  ],
-};
-
 function parseCsvLine(line, separator = ";") {
   const cells = [];
   let current = "";
@@ -362,8 +323,7 @@ function readChiamate() {
       };
     });
   }
-  localStorage.setItem(CHIAMATE_KEY, JSON.stringify([chiamataDemo]));
-  return [chiamataDemo];
+  return [];
 }
 
 function writeChiamate(chiamate) {

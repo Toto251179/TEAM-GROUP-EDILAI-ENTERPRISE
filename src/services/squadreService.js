@@ -2,19 +2,11 @@ import { operaiService } from "./operaiService.js";
 
 const SQUADRE_KEY = "teamGroup.squadre";
 
-const squadraDemo = {
-  id: "squadra-amir-shefi",
-  nomeSquadra: "AMIR - SHEFI",
-  tecnici: ["tec-amir", "tec-shefi"],
-  attiva: true,
-};
-
 function readSquadre() {
   operaiService.lista();
   const saved = localStorage.getItem(SQUADRE_KEY);
   if (saved) return JSON.parse(saved);
-  localStorage.setItem(SQUADRE_KEY, JSON.stringify([squadraDemo]));
-  return [squadraDemo];
+  return [];
 }
 
 function writeSquadre(squadre) {

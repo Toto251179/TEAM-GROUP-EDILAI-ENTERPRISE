@@ -1,35 +1,9 @@
 const OPERAI_KEY = "teamGroup.operai";
 
-const operaiDemo = [
-  {
-    id: "tec-amir",
-    nome: "Amir",
-    cognome: "",
-    telefono: "",
-    ruolo: "Tecnico",
-    squadra: "AMIR - SHEFI",
-    costoOrarioInterno: 28,
-    costoOrarioVendita: 42,
-    attivo: true,
-  },
-  {
-    id: "tec-shefi",
-    nome: "Shefi",
-    cognome: "",
-    telefono: "",
-    ruolo: "Tecnico",
-    squadra: "AMIR - SHEFI",
-    costoOrarioInterno: 28,
-    costoOrarioVendita: 42,
-    attivo: true,
-  },
-];
-
 function readOperai() {
   const saved = localStorage.getItem(OPERAI_KEY);
   if (saved) return JSON.parse(saved);
-  localStorage.setItem(OPERAI_KEY, JSON.stringify(operaiDemo));
-  return operaiDemo;
+  return [];
 }
 
 function writeOperai(operai) {

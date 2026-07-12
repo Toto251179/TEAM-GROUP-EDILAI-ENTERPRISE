@@ -8,6 +8,7 @@ import { squadreService } from "../services/squadreService";
 const ordineVuoto = {
   data: new Date().toISOString().split("T")[0],
   cantiereId: "",
+  clienteCode: "",
   cantiere: "",
   fornitore: "",
   codiceMateriale: "",
@@ -175,6 +176,7 @@ function OrdiniMateriali() {
     setNuovoOrdine({
       ...nuovoOrdine,
       cantiereId,
+      clienteCode: cantiere?.clienteCode || "",
       cantiere: cantiere?.nome || "",
     });
   };
@@ -513,7 +515,7 @@ function OrdiniMateriali() {
             <input placeholder="Numero chiamata" value={anteprimaDdt.numeroChiamata} onChange={(e) => aggiornaAnteprima("numeroChiamata", e.target.value)} />
             <input placeholder="Codice progetto" value={anteprimaDdt.codiceProgetto} onChange={(e) => aggiornaAnteprima("codiceProgetto", e.target.value)} />
             <input placeholder="ID cliente/impianto" value={anteprimaDdt.idCliente} onChange={(e) => aggiornaAnteprima("idCliente", e.target.value)} />
-            <input placeholder="Cliente/condominio" value={anteprimaDdt.cliente} onChange={(e) => aggiornaAnteprima("cliente", e.target.value || "Cliente da associare")} />
+            <input placeholder="Cliente" value={anteprimaDdt.cliente} onChange={(e) => aggiornaAnteprima("cliente", e.target.value || "Cliente da associare")} />
             <input placeholder="Fornitore" value={anteprimaDdt.fornitoreDati?.ragioneSociale || anteprimaDdt.fornitore} onChange={(e) => aggiornaFornitoreDdt("ragioneSociale", e.target.value)} />
             <input placeholder="Partita IVA fornitore" value={anteprimaDdt.fornitoreDati?.partitaIVA || ""} onChange={(e) => aggiornaFornitoreDdt("partitaIVA", e.target.value)} />
             <input placeholder="Indirizzo fornitore" value={anteprimaDdt.fornitoreDati?.indirizzo || ""} onChange={(e) => aggiornaFornitoreDdt("indirizzo", e.target.value)} />
