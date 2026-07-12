@@ -13,7 +13,18 @@ async function request(path, options = {}) {
   const data = isJson ? await response.json() : null;
 
   if (!response.ok) {
-    throw new Error(data?.message || "Richiesta non riuscita");
+    const detailParts = [
+      `HTTP ${response.status}`,
+      data?.code,
+      data?.message || "Richiesta non riuscita",
+      data?.field ? `Campo: ${data.field}` : "",
+    ].filter(Boolean);
+    const error = new Error(detailParts.join(" - "));
+    error.status = response.status;
+    error.code = data?.code;
+    error.field = data?.field;
+    error.data = data;
+    throw error;
   }
 
   return data;

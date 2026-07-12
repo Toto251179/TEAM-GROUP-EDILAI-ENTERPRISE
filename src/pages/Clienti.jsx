@@ -21,6 +21,10 @@ const clienteVuoto = {
   longitudine: "",
 };
 
+function valoreCliente(cliente, campoUfficiale, campoLegacy = campoUfficiale) {
+  return cliente?.[campoUfficiale] ?? cliente?.[campoLegacy] ?? "";
+}
+
 function esportaCsv(nomeFile, intestazioni, righe) {
   const escapeCsv = (valore) => `"${String(valore ?? "").replaceAll('"', '""')}"`;
   const contenuto = [intestazioni, ...righe]
@@ -44,6 +48,7 @@ function Clienti() {
   const [ricerca, setRicerca] = useState("");
   const [caricamento, setCaricamento] = useState(true);
   const [errore, setErrore] = useState("");
+  const [messaggio, setMessaggio] = useState("");
   const [importazione, setImportazione] = useState(null);
   const [fileImport, setFileImport] = useState(null);
 
@@ -81,19 +86,19 @@ function Clienti() {
     () =>
       clienti.filter((cliente) =>
         [
+          valoreCliente(cliente, "idCliente", "clienteCode"),
           cliente.ragioneSociale,
-          cliente.clienteCode,
           cliente.referente,
-          cliente.associazione,
+          valoreCliente(cliente, "amministratore", "associazione"),
           cliente.telefono,
-          cliente.email,
+          valoreCliente(cliente, "emailPrincipale", "email"),
           cliente.emailReferente,
           cliente.emailAmministratore,
-          cliente.indirizzo,
+          valoreCliente(cliente, "via", "indirizzo"),
           cliente.cap,
           cliente.comune,
           cliente.provincia,
-          cliente.note,
+          valoreCliente(cliente, "noteCliente", "note"),
           cliente.tipologiaCliente,
           cliente.latitudine,
           cliente.longitudine,
@@ -108,7 +113,7 @@ function Clienti() {
   const riepilogo = useMemo(
     () => ({
       totale: clienti.length,
-      conEmail: clienti.filter((cliente) => cliente.email).length,
+      conEmail: clienti.filter((cliente) => valoreCliente(cliente, "emailPrincipale", "email")).length,
       conTelefono: clienti.filter((cliente) => cliente.telefono).length,
       cantieri: cantieri.length,
       preventivi: preventivi.length,
@@ -120,12 +125,17 @@ function Clienti() {
   const contaPreventiviCliente = (cliente) =>
     preventivi.filter(
       (preventivo) =>
-        String(preventivo.clienteId || "") === String(cliente.id) || preventivo.cliente === cliente.ragioneSociale,
+        String(preventivo.clienteId || "") === String(cliente.id) ||
+        preventivo.clienteCode === valoreCliente(cliente, "idCliente", "clienteCode") ||
+        preventivo.cliente === cliente.ragioneSociale,
     ).length;
 
   const contaCantieriCliente = (cliente) =>
     cantieri.filter(
-      (cantiere) => String(cantiere.clienteId || "") === String(cliente.id) || cantiere.cliente === cliente.ragioneSociale,
+      (cantiere) =>
+        String(cantiere.clienteId || "") === String(cliente.id) ||
+        cantiere.clienteCode === valoreCliente(cliente, "idCliente", "clienteCode") ||
+        cantiere.cliente === cliente.ragioneSociale,
     ).length;
 
   const aggiornaVistaDaDatabase = async () => {
@@ -150,44 +160,44 @@ function Clienti() {
   };
 
   const salvaCliente = async () => {
-    const clienteCode = form.clienteCode.trim();
-    if (!clienteCode) {
+    const idCliente = form.clienteCode.trim();
+    if (!idCliente) {
       setErrore("Inserisci ID Cliente.");
+      setMessaggio("");
       return;
     }
-    if (clienteCode.length > 20) {
+    if (idCliente.length > 20) {
       setErrore("ID Cliente massimo 20 caratteri.");
-      return;
-    }
-    const codiceDuplicato = clienti.some(
-      (cliente) =>
-        String(cliente.id) !== String(form.id) &&
-        String(cliente.clienteCode || "").trim().toLowerCase() === clienteCode.toLowerCase(),
-    );
-    if (codiceDuplicato) {
-      setErrore("ID Cliente già utilizzato.");
+      setMessaggio("");
       return;
     }
     if (!form.ragioneSociale.trim()) {
       setErrore("Inserisci la ragione sociale del cliente.");
+      setMessaggio("");
       return;
     }
 
     setErrore("");
+    setMessaggio("");
 
     const payload = {
-      clienteCode,
+      idCliente,
+      clienteCode: idCliente,
       ragioneSociale: form.ragioneSociale.trim(),
       referente: form.referente.trim(),
+      amministratore: form.associazione.trim(),
       associazione: form.associazione.trim(),
       telefono: form.telefono.trim(),
+      emailPrincipale: form.email.trim(),
       email: form.email.trim(),
       emailReferente: form.emailReferente.trim(),
       emailAmministratore: form.emailAmministratore.trim(),
+      via: form.indirizzo.trim(),
       indirizzo: form.indirizzo.trim(),
       cap: form.cap.trim(),
       comune: form.comune.trim(),
       provincia: form.provincia.trim(),
+      noteCliente: form.note.trim(),
       note: form.note.trim(),
       tipologiaCliente: form.tipologiaCliente.trim(),
       latitudine: form.latitudine === "" ? null : form.latitudine,
@@ -203,6 +213,7 @@ function Clienti() {
 
       await aggiornaVistaDaDatabase();
       resetForm();
+      setMessaggio("Cliente salvato correttamente");
     } catch (error) {
       setErrore(error.message);
     }
@@ -211,23 +222,25 @@ function Clienti() {
   const modificaCliente = (cliente) => {
     setForm({
       id: cliente.id,
-      clienteCode: cliente.clienteCode || "",
+      clienteCode: valoreCliente(cliente, "idCliente", "clienteCode"),
       ragioneSociale: cliente.ragioneSociale || "",
       referente: cliente.referente || "",
-      associazione: cliente.associazione || cliente.amministratore || "",
+      associazione: valoreCliente(cliente, "amministratore", "associazione"),
       telefono: cliente.telefono || "",
-      email: cliente.email || "",
+      email: valoreCliente(cliente, "emailPrincipale", "email"),
       emailReferente: cliente.emailReferente || "",
       emailAmministratore: cliente.emailAmministratore || "",
-      indirizzo: cliente.indirizzo || "",
+      indirizzo: valoreCliente(cliente, "via", "indirizzo"),
       cap: cliente.cap || "",
       comune: cliente.comune || "",
       provincia: cliente.provincia || "",
-      note: cliente.note || "",
+      note: valoreCliente(cliente, "noteCliente", "note"),
       tipologiaCliente: cliente.tipologiaCliente || "",
       latitudine: cliente.latitudine ?? "",
       longitudine: cliente.longitudine ?? "",
     });
+    setErrore("");
+    setMessaggio("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -236,11 +249,13 @@ function Clienti() {
     if (!conferma) return;
 
     setErrore("");
+    setMessaggio("");
 
     try {
-      await api.delete(`/clienti/${cliente.id}`);
+      const response = await api.delete(`/clienti/${cliente.id}`);
       await aggiornaVistaDaDatabase();
       if (form.id === cliente.id) resetForm();
+      setMessaggio(response?.message || "Cliente eliminato correttamente.");
     } catch (error) {
       setErrore(error.message);
     }
@@ -249,7 +264,7 @@ function Clienti() {
   const creaPreventivoCliente = (cliente) => {
     const params = new URLSearchParams({
       clienteId: String(cliente.id || ""),
-      clienteCode: cliente.clienteCode || "",
+      clienteCode: valoreCliente(cliente, "idCliente", "clienteCode"),
       cliente: cliente.ragioneSociale || "",
       idIndirizzo: Array.isArray(cliente.indirizzi) ? String(cliente.indirizzi[0]?.id || "") : "",
     });
@@ -261,14 +276,15 @@ function Clienti() {
     if (!nome) return;
 
     setErrore("");
+    setMessaggio("");
 
     try {
       const creato = await api.post("/cantieri", {
         clienteId: cliente.id,
-        clienteCode: cliente.clienteCode || "",
+        clienteCode: valoreCliente(cliente, "idCliente", "clienteCode"),
         nome,
         cliente: cliente.ragioneSociale,
-        indirizzo: cliente.indirizzo || "",
+        indirizzo: valoreCliente(cliente, "via", "indirizzo"),
         importo: 0,
         stato: "In Corso",
         note: "",
@@ -282,24 +298,24 @@ function Clienti() {
   const esportaClienti = () => {
     esportaCsv(
       `clienti-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["ID Cliente", "Ragione Sociale / Condominio", "Referente", "Associazione", "Telefono", "Email principale", "Email amministratore", "Email referente", "Via", "CAP", "Comune", "Provincia", "Tipologia cliente", "Latitudine", "Longitudine", "Note"],
+      ["ID Cliente", "Ragione Sociale", "Referente", "Amministratore", "Telefono", "Email principale", "Email amministratore", "Email referente", "Via", "CAP", "Comune", "Provincia", "Tipo Cliente", "Latitudine", "Longitudine", "Note Cliente"],
       clientiFiltrati.map((cliente) => [
-        cliente.clienteCode,
+        valoreCliente(cliente, "idCliente", "clienteCode"),
         cliente.ragioneSociale,
         cliente.referente,
-        cliente.associazione,
+        valoreCliente(cliente, "amministratore", "associazione"),
         cliente.telefono,
-        cliente.email,
+        valoreCliente(cliente, "emailPrincipale", "email"),
         cliente.emailAmministratore,
         cliente.emailReferente,
-        cliente.indirizzo,
+        valoreCliente(cliente, "via", "indirizzo"),
         cliente.cap,
         cliente.comune,
         cliente.provincia,
         cliente.tipologiaCliente,
         cliente.latitudine,
         cliente.longitudine,
-        cliente.note,
+        valoreCliente(cliente, "noteCliente", "note"),
       ]),
     );
   };
@@ -316,6 +332,7 @@ function Clienti() {
     if (!file) return;
     setFileImport(file);
     setErrore("");
+    setMessaggio("");
     setImportazione(null);
 
     try {
@@ -330,12 +347,14 @@ function Clienti() {
   const confermaImportExcel = async () => {
     if (!fileImport) return;
     setErrore("");
+    setMessaggio("");
 
     try {
       const fileBase64 = await fileToBase64(fileImport);
       const riepilogo = await api.post("/clienti/import-excel", { mode: "import", fileBase64 });
       setImportazione(riepilogo);
       await aggiornaVistaDaDatabase();
+      setMessaggio("Importazione clienti completata.");
     } catch (error) {
       setErrore(error.message);
     }
@@ -351,7 +370,7 @@ function Clienti() {
 
   return (
     <div className="clienti-page">
-      <h1>ANAGRAFICA CLIENTI</h1>
+      <h1>Anagrafica Clienti</h1>
 
       <div
         className="clienti-dashboard"
@@ -363,19 +382,19 @@ function Clienti() {
         }}
       >
         <div style={card}>
-          <h3>Clienti</h3>
+          <h3>Totale Clienti</h3>
           <h2>{riepilogo.totale}</h2>
         </div>
         <div style={card}>
-          <h3>Risultati</h3>
+          <h3>Elenco Clienti</h3>
           <h2>{riepilogo.filtrati}</h2>
         </div>
         <div style={card}>
-          <h3>Con Email</h3>
+          <h3>Clienti con Email</h3>
           <h2>{riepilogo.conEmail}</h2>
         </div>
         <div style={card}>
-          <h3>Con Telefono</h3>
+          <h3>Clienti con Telefono</h3>
           <h2>{riepilogo.conTelefono}</h2>
         </div>
         <div style={card}>
@@ -389,6 +408,7 @@ function Clienti() {
       </div>
 
       {errore && <p style={{ color: "crimson", marginBottom: "15px" }}>{errore}</p>}
+      {messaggio && <p style={{ color: "green", marginBottom: "15px" }}>{messaggio}</p>}
 
       <div className="clienti-form-panel" style={{ background: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
         <h2>{form.id ? "Modifica Cliente" : "Nuovo Cliente"}</h2>
@@ -411,7 +431,7 @@ function Clienti() {
             onChange={(e) => aggiornaForm("referente", e.target.value)}
           />
           <input
-            placeholder="Associazione"
+            placeholder="Amministratore"
             value={form.associazione}
             onChange={(e) => aggiornaForm("associazione", e.target.value)}
           />
@@ -422,7 +442,7 @@ function Clienti() {
           />
           <input placeholder="Email principale" value={form.email} onChange={(e) => aggiornaForm("email", e.target.value)} />
           <input placeholder="Email amministratore" value={form.emailAmministratore} onChange={(e) => aggiornaForm("emailAmministratore", e.target.value)} />
-          <input placeholder="Email referente (facoltativa)" value={form.emailReferente} onChange={(e) => aggiornaForm("emailReferente", e.target.value)} />
+          <input placeholder="Email referente" value={form.emailReferente} onChange={(e) => aggiornaForm("emailReferente", e.target.value)} />
           <input
             placeholder="Via"
             value={form.indirizzo}
@@ -431,13 +451,13 @@ function Clienti() {
           <input placeholder="CAP" value={form.cap} onChange={(e) => aggiornaForm("cap", e.target.value)} />
           <input placeholder="Comune" value={form.comune} onChange={(e) => aggiornaForm("comune", e.target.value)} />
           <input placeholder="Provincia" value={form.provincia} onChange={(e) => aggiornaForm("provincia", e.target.value)} />
-          <input placeholder="Tipologia cliente" value={form.tipologiaCliente} onChange={(e) => aggiornaForm("tipologiaCliente", e.target.value)} />
+          <input placeholder="Tipo Cliente" value={form.tipologiaCliente} onChange={(e) => aggiornaForm("tipologiaCliente", e.target.value)} />
           <input placeholder="Latitudine" value={form.latitudine} onChange={(e) => aggiornaForm("latitudine", e.target.value)} />
           <input placeholder="Longitudine" value={form.longitudine} onChange={(e) => aggiornaForm("longitudine", e.target.value)} />
         </div>
 
         <textarea
-          placeholder="Note cliente"
+          placeholder="Note Cliente"
           value={form.note}
           onChange={(e) => aggiornaForm("note", e.target.value)}
           style={{ width: "100%", marginTop: "12px" }}
@@ -454,7 +474,7 @@ function Clienti() {
           <h2>Elenco Clienti</h2>
           <div className="clienti-list-actions" style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
             <input
-              placeholder="Ricerca per ID cliente, cliente, referente, associazione, telefono, email"
+              placeholder="Ricerca per ID cliente, cliente, referente, amministratore, telefono, email, comune"
               value={ricerca}
               onChange={(e) => setRicerca(e.target.value)}
               style={{ width: "500px" }}
@@ -497,14 +517,14 @@ function Clienti() {
                   <th>ID Cliente</th>
                   <th>Ragione Sociale</th>
                   <th>Referente</th>
-                  <th>Associazione</th>
+                  <th>Amministratore</th>
                   <th>Telefono</th>
-                  <th>Email</th>
-              <th>Indirizzo</th>
-              <th>Tipologia</th>
-              <th>Preventivi</th>
-              <th>Cantieri</th>
-                  <th>Note</th>
+                  <th>Email principale</th>
+                  <th>Comune</th>
+                  <th>Provincia</th>
+                  <th>Tipo Cliente</th>
+                  <th>Via</th>
+                  <th>Note Cliente</th>
                   <th>Azioni</th>
                 </tr>
               </thead>
@@ -520,22 +540,25 @@ function Clienti() {
 
                 {clientiFiltrati.map((cliente) => (
                   <tr key={cliente.id}>
-                    <td style={{ fontWeight: 800 }}>{cliente.clienteCode}</td>
+                    <td style={{ fontWeight: 800 }}>{valoreCliente(cliente, "idCliente", "clienteCode")}</td>
                     <td style={{ fontWeight: 800, textAlign: "left" }}>{cliente.ragioneSociale}</td>
                     <td>{cliente.referente}</td>
-                    <td>{cliente.associazione}</td>
+                    <td>{valoreCliente(cliente, "amministratore", "associazione")}</td>
                     <td>{cliente.telefono}</td>
-                    <td>{cliente.email}</td>
-                    <td style={{ textAlign: "left" }}>{cliente.indirizzo}</td>
+                    <td>{valoreCliente(cliente, "emailPrincipale", "email")}</td>
+                    <td>{cliente.comune}</td>
+                    <td>{cliente.provincia}</td>
                     <td>{cliente.tipologiaCliente}</td>
-                    <td>{contaPreventiviCliente(cliente)}</td>
-                    <td>{contaCantieriCliente(cliente)}</td>
-                    <td style={{ textAlign: "left" }}>{cliente.note}</td>
+                    <td style={{ textAlign: "left" }}>{valoreCliente(cliente, "via", "indirizzo")}</td>
+                    <td style={{ textAlign: "left" }}>{valoreCliente(cliente, "noteCliente", "note")}</td>
                     <td>
                       <button onClick={() => modificaCliente(cliente)}>Modifica</button>{" "}
                       <button onClick={() => creaPreventivoCliente(cliente)}>Nuovo preventivo</button>{" "}
                       <button onClick={() => creaCantiereCliente(cliente)}>Nuovo cantiere</button>{" "}
                       <button onClick={() => eliminaCliente(cliente)}>Elimina</button>
+                      <span style={{ display: "none" }}>
+                        {contaPreventiviCliente(cliente)} {contaCantieriCliente(cliente)}
+                      </span>
                     </td>
                   </tr>
                 ))}

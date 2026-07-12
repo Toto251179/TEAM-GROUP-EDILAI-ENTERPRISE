@@ -9,6 +9,41 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-12
 
+### Sprint 1 - Clienti
+
+Correzioni:
+
+- Allineato il flusso Clienti tra frontend, API, backend e PostgreSQL.
+- Aggiunta gestione campi ufficiali cliente.
+- Aggiunta validazione di id_cliente e ragione_sociale.
+- Aggiunto rifiuto duplicati id_cliente con HTTP 409.
+- Aggiunto blocco eliminazione per clienti collegati a preventivi o cantieri.
+- Migliorati messaggi errore con codice HTTP, codice backend e campo coinvolto.
+
+Test eseguiti:
+
+- GET clienti: HTTP 200.
+- GET dettaglio cliente: HTTP 200.
+- POST cliente TEST001: HTTP 201.
+- PUT cliente TEST001: HTTP 200.
+- DELETE cliente TEST001: HTTP 200.
+- Duplicato TEST001: HTTP 409.
+- Validazione campi obbligatori: HTTP 400.
+- Persistenza dopo riavvio backend: verificata.
+- Build frontend: completata.
+- Lint mirato sui file Clienti/API: completato.
+
+Risultato:
+
+IN VERIFICA.
+
+Limiti ancora presenti:
+
+- Verifica browser/console non completata per blocco policy del browser in-app sull'URL di test isolato.
+- Lint globale ancora bloccato da errori preesistenti fuori dal modulo Clienti.
+
+---
+
 ### Documentazione
 
 - Creato AGENTS.md

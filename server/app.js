@@ -39,12 +39,16 @@ app.use((error, req, res, _next) => {
   console.error(error);
   const isClienteCodeDuplicate =
     error.code === "23505" &&
-    String(error.constraint || error.detail || "").includes("cliente_code");
+    /clienti_(cliente_code|id_cliente).*uidx/.test(String(error.constraint || ""));
   const status = isClienteCodeDuplicate ? 409 : Number(error.status || error.statusCode || 500);
   res.status(status).json({
+    code: isClienteCodeDuplicate ? "CLIENTE_DUPLICATO" : error.code || `HTTP_${status}`,
     message: isClienteCodeDuplicate
       ? "ID Cliente già utilizzato."
-      : status >= 500 ? "Errore interno del server" : error.message,
+      : error.message,
+    field: isClienteCodeDuplicate ? "id_cliente" : error.field,
+    existingCliente: error.existingCliente,
+    collegamenti: error.collegamenti,
     detail: env.nodeEnv === "development" ? error.message : undefined,
   });
 });

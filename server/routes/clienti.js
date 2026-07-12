@@ -6,18 +6,23 @@ import { createCrudRepository } from "../utils/crud.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 const clienteFields = [
+  "idCliente",
   "clienteCode",
   "ragioneSociale",
   "referente",
+  "amministratore",
   "associazione",
   "telefono",
+  "emailPrincipale",
   "email",
   "emailReferente",
   "emailAmministratore",
+  "via",
   "indirizzo",
   "cap",
   "comune",
   "provincia",
+  "noteCliente",
   "note",
   "tipologiaCliente",
   "latitudine",
@@ -43,6 +48,39 @@ function toCamel(row) {
 
 function toSnake(field) {
   return field.replace(/[A-Z]/g, (letter) => "_" + letter.toLowerCase());
+}
+
+function creaErroreCliente(status, message, field, code = `HTTP_${status}`, extra = {}) {
+  const error = new Error(message);
+  error.status = status;
+  error.code = code;
+  error.field = field;
+  Object.assign(error, extra);
+  return error;
+}
+
+function clienteResponse(cliente) {
+  if (!cliente) return cliente;
+
+  const idCliente = cliente.idCliente || cliente.clienteCode || "";
+  const amministratore = cliente.amministratore || cliente.associazione || "";
+  const emailPrincipale = cliente.emailPrincipale || cliente.email || "";
+  const via = cliente.via || cliente.indirizzo || "";
+  const noteCliente = cliente.noteCliente || cliente.note || "";
+
+  return {
+    ...cliente,
+    idCliente,
+    clienteCode: idCliente,
+    amministratore,
+    associazione: amministratore,
+    emailPrincipale,
+    email: emailPrincipale,
+    via,
+    indirizzo: via,
+    noteCliente,
+    note: noteCliente,
+  };
 }
 
 function pulisciValore(value) {
@@ -81,14 +119,18 @@ function pick(row, header) {
 
 function clienteDaExcel(row) {
   const cliente = {
+    idCliente: pick(row, "COD. IONE"),
     clienteCode: pick(row, "COD. IONE"),
     ragioneSociale: pick(row, "RAGIONE SOCIALE"),
+    via: pick(row, "INDIRIZZO"),
     indirizzo: pick(row, "INDIRIZZO"),
     cap: pick(row, "CAP"),
     comune: pick(row, "CITTA'"),
     provincia: pick(row, "PROV"),
     referente: pick(row, "REFERENTE"),
+    amministratore: pick(row, "ASSOCIAZIONE") || pick(row, "AMMINISTRATORE"),
     associazione: pick(row, "ASSOCIAZIONE") || pick(row, "AMMINISTRATORE"),
+    emailPrincipale: pick(row, "MAIL"),
     email: pick(row, "MAIL"),
     tipologiaCliente: pick(row, "TIPOLOGIA CLIENTE") || pick(row, "TIPOLOGIA"),
     latitudine: pick(row, "LATITUDINE"),
@@ -99,18 +141,23 @@ function clienteDaExcel(row) {
 
 function mergeClientePayload(attuale, excel) {
   return {
+    idCliente: pulisciValore(attuale.idCliente) || pulisciValore(attuale.clienteCode) || excel.idCliente || excel.clienteCode,
     clienteCode: pulisciValore(attuale.clienteCode) || excel.clienteCode,
     ragioneSociale: pulisciValore(attuale.ragioneSociale) || excel.ragioneSociale,
     referente: pulisciValore(attuale.referente) || excel.referente,
+    amministratore: pulisciValore(attuale.amministratore) || pulisciValore(attuale.associazione) || excel.amministratore || excel.associazione,
     associazione: pulisciValore(attuale.associazione) || pulisciValore(attuale.amministratore) || excel.associazione,
     telefono: pulisciValore(attuale.telefono),
+    emailPrincipale: pulisciValore(attuale.emailPrincipale) || pulisciValore(attuale.email) || excel.emailPrincipale || excel.email,
     email: pulisciValore(attuale.email) || excel.email,
     emailReferente: pulisciValore(attuale.emailReferente),
     emailAmministratore: pulisciValore(attuale.emailAmministratore),
+    via: pulisciValore(attuale.via) || pulisciValore(attuale.indirizzo) || excel.via || excel.indirizzo,
     indirizzo: pulisciValore(attuale.indirizzo) || excel.indirizzo,
     cap: pulisciValore(attuale.cap) || excel.cap,
     comune: pulisciValore(attuale.comune) || excel.comune,
     provincia: pulisciValore(attuale.provincia) || excel.provincia,
+    noteCliente: pulisciValore(attuale.noteCliente) || pulisciValore(attuale.note),
     note: pulisciValore(attuale.note),
     tipologiaCliente: pulisciValore(attuale.tipologiaCliente) || excel.tipologiaCliente,
     latitudine: attuale.latitudine ?? normalizzaCoordinata(excel.latitudine),
@@ -119,7 +166,8 @@ function mergeClientePayload(attuale, excel) {
 }
 
 function indicizzaCliente(cliente, maps) {
-  if (normalizzaChiave(cliente.clienteCode)) maps.byCode.set(normalizzaChiave(cliente.clienteCode), cliente);
+  const codice = cliente.idCliente || cliente.clienteCode;
+  if (normalizzaChiave(codice)) maps.byCode.set(normalizzaChiave(codice), cliente);
   if (normalizzaNome(cliente.ragioneSociale)) maps.byName.set(normalizzaNome(cliente.ragioneSociale), cliente);
 }
 
@@ -173,7 +221,7 @@ async function aggiungiIndirizzi(clienti) {
   });
 
   return clienti.map((cliente) => ({
-    ...cliente,
+    ...clienteResponse(cliente),
     indirizzi: indirizziPerCliente.get(String(cliente.id)) || [],
   }));
 }
@@ -207,18 +255,23 @@ function normalizzaCoordinata(value) {
 function normalizzaPayloadCliente(body = {}) {
   return {
     ...body,
+    idCliente: body.idCliente ?? body.id_cliente ?? body.clienteCode ?? body.codiceCliente ?? body.codice_cliente ?? "",
     clienteCode: body.clienteCode ?? body.idCliente ?? body.id_cliente ?? body.codiceCliente ?? body.codice_cliente ?? "",
     ragioneSociale: body.ragioneSociale ?? body.ragione_sociale ?? body.condominio ?? "",
     referente: body.referente ?? "",
+    amministratore: body.amministratore ?? body.associazione ?? "",
     associazione: body.associazione ?? body.amministratore ?? "",
     telefono: body.telefono ?? "",
+    emailPrincipale: body.emailPrincipale ?? body.email_principale ?? body.email ?? "",
     email: body.email ?? body.emailPrincipale ?? body.email_principale ?? "",
     emailReferente: body.emailReferente ?? body.email_referente ?? "",
     emailAmministratore: body.emailAmministratore ?? body.email_amministratore ?? "",
+    via: body.via ?? body.indirizzo ?? "",
     indirizzo: body.indirizzo ?? body.via ?? "",
     cap: body.cap ?? "",
     comune: body.comune ?? "",
     provincia: body.provincia ?? "",
+    noteCliente: body.noteCliente ?? body.note_cliente ?? body.note ?? "",
     note: body.note ?? body.noteCliente ?? body.note_cliente ?? "",
     tipologiaCliente: body.tipologiaCliente ?? body.tipologia_cliente ?? "",
     latitudine: normalizzaCoordinata(body.latitudine),
@@ -231,15 +284,60 @@ let schemaClientiPromise;
 function ensureClientiSchema() {
   if (!schemaClientiPromise) {
     schemaClientiPromise = Promise.all([
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS id_cliente TEXT NOT NULL DEFAULT ''"),
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS amministratore TEXT"),
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS email_principale TEXT"),
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS via TEXT"),
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS note_cliente TEXT"),
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS cliente_code TEXT NOT NULL DEFAULT ''"),
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS associazione TEXT"),
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS email TEXT"),
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS indirizzo TEXT"),
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS note TEXT"),
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS email_referente TEXT"),
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS email_amministratore TEXT"),
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS cap TEXT"),
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS comune TEXT"),
+      query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS provincia TEXT"),
       query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS tipologia_cliente TEXT"),
       query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS latitudine NUMERIC(10, 7)"),
       query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS longitudine NUMERIC(10, 7)"),
-    ]);
+    ]).then(async () => {
+      await query(
+        `UPDATE clienti
+         SET id_cliente = COALESCE(NULLIF(id_cliente, ''), cliente_code),
+             cliente_code = COALESCE(NULLIF(cliente_code, ''), id_cliente),
+             amministratore = COALESCE(NULLIF(amministratore, ''), associazione),
+             associazione = COALESCE(NULLIF(associazione, ''), amministratore),
+             email_principale = COALESCE(NULLIF(email_principale, ''), email),
+             email = COALESCE(NULLIF(email, ''), email_principale),
+             via = COALESCE(NULLIF(via, ''), indirizzo),
+             indirizzo = COALESCE(NULLIF(indirizzo, ''), via),
+             note_cliente = COALESCE(NULLIF(note_cliente, ''), note),
+             note = COALESCE(NULLIF(note, ''), note_cliente)
+         WHERE id_cliente = ''
+            OR cliente_code = ''
+            OR amministratore IS NULL
+            OR associazione IS NULL
+            OR email_principale IS NULL
+            OR email IS NULL
+            OR via IS NULL
+            OR indirizzo IS NULL
+            OR note_cliente IS NULL
+            OR note IS NULL`,
+      );
+      await query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS clienti_id_cliente_uidx
+         ON clienti (LOWER(BTRIM(id_cliente)))
+         WHERE BTRIM(id_cliente) <> ''`,
+      );
+    });
   }
 
   return schemaClientiPromise;
 }
 
+// eslint-disable-next-line no-unused-vars
 async function verificaClienteCodeUnivoco(clienteCode, clienteId = null) {
   const codice = String(clienteCode || "").trim();
   if (!codice) return;
@@ -260,6 +358,7 @@ async function verificaClienteCodeUnivoco(clienteCode, clienteId = null) {
   }
 }
 
+// eslint-disable-next-line no-unused-vars
 async function verificaRagioneSocialeUnivoca(ragioneSociale, clienteId = null) {
   const nome = String(ragioneSociale || "").trim();
   if (!nome) return;
@@ -280,19 +379,87 @@ async function verificaRagioneSocialeUnivoca(ragioneSociale, clienteId = null) {
   }
 }
 
+function validaClienteObbligatorio(body) {
+  const idCliente = String(body.idCliente || body.clienteCode || "").trim();
+  const ragioneSociale = String(body.ragioneSociale || "").trim();
+
+  if (!idCliente) {
+    throw creaErroreCliente(400, "Inserisci ID Cliente.", "id_cliente", "CLIENTE_VALIDAZIONE");
+  }
+  if (idCliente.length > 20) {
+    throw creaErroreCliente(400, "ID Cliente massimo 20 caratteri.", "id_cliente", "CLIENTE_VALIDAZIONE");
+  }
+  if (!ragioneSociale) {
+    throw creaErroreCliente(400, "Inserisci la ragione sociale del cliente.", "ragione_sociale", "CLIENTE_VALIDAZIONE");
+  }
+
+  return { idCliente, ragioneSociale };
+}
+
+async function verificaIdClienteUnivoco(idCliente, clienteId = null) {
+  const result = await query(
+    `SELECT id, id_cliente, cliente_code, ragione_sociale
+     FROM clienti
+     WHERE LOWER(BTRIM(COALESCE(NULLIF(id_cliente, ''), cliente_code))) = LOWER(BTRIM($1))
+       AND ($2::text IS NULL OR id::text <> $2::text)
+     LIMIT 1`,
+    [idCliente, clienteId ? String(clienteId) : null],
+  );
+
+  if (result.rows.length) {
+    throw creaErroreCliente(
+      409,
+      "ID Cliente già utilizzato.",
+      "id_cliente",
+      "CLIENTE_DUPLICATO",
+      { existingCliente: clienteResponse(toCamel(result.rows[0])) },
+    );
+  }
+}
+
+async function contaCollegamentiCliente(cliente) {
+  const clienteId = String(cliente.id);
+  const idCliente = cliente.idCliente || cliente.clienteCode || "";
+  const ragioneSociale = cliente.ragioneSociale || "";
+
+  const [preventiviRes, cantieriRes] = await Promise.all([
+    query(
+      `SELECT COUNT(*)::int AS count
+       FROM preventivi
+       WHERE cliente_id::text = $1
+          OR LOWER(BTRIM(COALESCE(cliente_code, ''))) = LOWER(BTRIM($2))
+          OR LOWER(BTRIM(COALESCE(cliente_nome, cliente, ''))) = LOWER(BTRIM($3))`,
+      [clienteId, idCliente, ragioneSociale],
+    ),
+    query(
+      `SELECT COUNT(*)::int AS count
+       FROM cantieri
+       WHERE cliente_id::text = $1
+          OR LOWER(BTRIM(COALESCE(cliente_code, ''))) = LOWER(BTRIM($2))
+          OR LOWER(BTRIM(COALESCE(cliente, ''))) = LOWER(BTRIM($3))`,
+      [clienteId, idCliente, ragioneSociale],
+    ),
+  ]);
+
+  return {
+    preventivi: preventiviRes.rows[0]?.count || 0,
+    cantieri: cantieriRes.rows[0]?.count || 0,
+  };
+}
+
 router.use(asyncHandler(async (_req, _res, next) => {
   await ensureClientiSchema();
   next();
 }));
 
 router.get("/", asyncHandler(async (req, res) => {
-  res.json(await aggiungiIndirizzi(await repository.findAll()));
+  res.json(await aggiungiIndirizzi((await repository.findAll()).map(clienteResponse)));
 }));
 
 router.get("/:id", asyncHandler(async (req, res) => {
   const item = await repository.findById(req.params.id);
   if (!item) return res.status(404).json({ message: "Cliente non trovato" });
-  res.json((await aggiungiIndirizzi([item]))[0]);
+  res.json((await aggiungiIndirizzi([clienteResponse(item)]))[0]);
 }));
 
 router.post("/import-excel", asyncHandler(async (req, res) => {
@@ -431,41 +598,64 @@ router.post("/import-excel", asyncHandler(async (req, res) => {
 
 router.post("/", asyncHandler(async (req, res) => {
   const body = normalizzaPayloadCliente(req.body);
-  const clienteCode = String(body.clienteCode || "").trim();
-  if (!clienteCode) return res.status(400).json({ message: "Inserisci ID Cliente." });
-  if (clienteCode.length > 20) return res.status(400).json({ message: "ID Cliente massimo 20 caratteri." });
+  const { idCliente } = validaClienteObbligatorio(body);
 
-  await verificaClienteCodeUnivoco(clienteCode);
-  await verificaRagioneSocialeUnivoca(body.ragioneSociale);
+  await verificaIdClienteUnivoco(idCliente);
   const item = await repository.create({
     ...body,
-    clienteCode,
-    associazione: body.associazione,
+    idCliente,
+    clienteCode: idCliente,
+    amministratore: body.amministratore,
+    associazione: body.amministratore,
+    emailPrincipale: body.emailPrincipale,
+    email: body.emailPrincipale,
+    via: body.via,
+    indirizzo: body.via,
+    noteCliente: body.noteCliente,
+    note: body.noteCliente,
   });
-  res.status(201).json(await sincronizzaIndirizzoLegacy(item));
+  res.status(201).json(await sincronizzaIndirizzoLegacy(clienteResponse(item)));
 }));
 
 router.put("/:id", asyncHandler(async (req, res) => {
   const body = normalizzaPayloadCliente(req.body);
-  const clienteCode = String(body.clienteCode || "").trim();
-  if (!clienteCode) return res.status(400).json({ message: "Inserisci ID Cliente." });
-  if (clienteCode.length > 20) return res.status(400).json({ message: "ID Cliente massimo 20 caratteri." });
+  const { idCliente } = validaClienteObbligatorio(body);
 
-  await verificaClienteCodeUnivoco(clienteCode, req.params.id);
-  await verificaRagioneSocialeUnivoca(body.ragioneSociale, req.params.id);
+  await verificaIdClienteUnivoco(idCliente, req.params.id);
   const item = await repository.update(req.params.id, {
     ...body,
-    clienteCode,
-    associazione: body.associazione,
+    idCliente,
+    clienteCode: idCliente,
+    amministratore: body.amministratore,
+    associazione: body.amministratore,
+    emailPrincipale: body.emailPrincipale,
+    email: body.emailPrincipale,
+    via: body.via,
+    indirizzo: body.via,
+    noteCliente: body.noteCliente,
+    note: body.noteCliente,
   });
   if (!item) return res.status(404).json({ message: "Cliente non trovato" });
-  res.json(await sincronizzaIndirizzoLegacy(item));
+  res.json(await sincronizzaIndirizzoLegacy(clienteResponse(item)));
 }));
 
 router.delete("/:id", asyncHandler(async (req, res) => {
+  const cliente = await repository.findById(req.params.id);
+  if (!cliente) return res.status(404).json({ message: "Cliente non trovato" });
+
+  const collegamenti = await contaCollegamentiCliente(clienteResponse(cliente));
+  if (collegamenti.preventivi || collegamenti.cantieri) {
+    throw creaErroreCliente(
+      409,
+      `Cliente collegato a ${collegamenti.preventivi} preventivi e ${collegamenti.cantieri} cantieri. Eliminazione annullata.`,
+      "id_cliente",
+      "CLIENTE_COLLEGATO",
+      { collegamenti },
+    );
+  }
+
   const item = await repository.remove(req.params.id);
-  if (!item) return res.status(404).json({ message: "Cliente non trovato" });
-  res.json({ deleted: true, item });
+  res.json({ deleted: true, message: "Cliente eliminato correttamente.", item: clienteResponse(item) });
 }));
 
 export default router;

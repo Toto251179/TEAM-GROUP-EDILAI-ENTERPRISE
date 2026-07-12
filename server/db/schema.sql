@@ -2,18 +2,23 @@
 
 CREATE TABLE IF NOT EXISTS clienti (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id_cliente TEXT NOT NULL DEFAULT '',
   cliente_code TEXT NOT NULL DEFAULT '',
   ragione_sociale TEXT NOT NULL,
   referente TEXT,
+  amministratore TEXT,
   associazione TEXT,
   telefono TEXT,
+  email_principale TEXT,
   email TEXT,
   email_referente TEXT,
   email_amministratore TEXT,
+  via TEXT,
   indirizzo TEXT,
   cap TEXT,
   comune TEXT,
   provincia TEXT,
+  note_cliente TEXT,
   note TEXT,
   tipologia_cliente TEXT,
   latitudine NUMERIC(10, 7),
@@ -21,6 +26,10 @@ CREATE TABLE IF NOT EXISTS clienti (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS clienti_id_cliente_uidx
+  ON clienti (LOWER(BTRIM(id_cliente)))
+  WHERE BTRIM(id_cliente) <> '';
 
 CREATE UNIQUE INDEX IF NOT EXISTS clienti_cliente_code_uidx
   ON clienti (LOWER(BTRIM(cliente_code)))
