@@ -9,6 +9,25 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-12
 
+### Sprint 1.1 - Clienti
+
+Correzioni:
+
+- Migrati i valori storici di referente in amministratore solo per clienti con amministratore vuoto.
+- Mantenuta la compatibilita legacy in Elenco Clienti mostrando amministratore e, se assente, referente.
+- Aggiornato il salvataggio frontend per inviare il nuovo amministratore nel campo ufficiale amministratore.
+
+Test eseguiti:
+
+- Conteggio clienti con referente valorizzato e amministratore vuoto.
+- Migrazione sicura senza sovrascrivere amministratori gia valorizzati.
+- Verifica clienti BERTI, CENTRO COMMERCIALE ARTIGIANALE CALDOGNO, CENTRO COMMERCIALE PIO X.
+- Browser test pagina /clienti.
+- Persistenza dopo riavvio backend.
+- Build frontend completata.
+
+---
+
 ### Sprint 1 - Clienti
 
 Correzioni:

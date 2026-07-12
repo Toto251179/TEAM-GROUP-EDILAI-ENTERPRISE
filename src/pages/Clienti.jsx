@@ -25,6 +25,15 @@ function valoreCliente(cliente, campoUfficiale, campoLegacy = campoUfficiale) {
   return cliente?.[campoUfficiale] ?? cliente?.[campoLegacy] ?? "";
 }
 
+function valoreNonVuoto(value) {
+  const text = String(value ?? "").trim();
+  return text || "";
+}
+
+function amministratoreVisibile(cliente) {
+  return valoreNonVuoto(cliente?.amministratore) || valoreNonVuoto(cliente?.associazione) || valoreNonVuoto(cliente?.referente);
+}
+
 function esportaCsv(nomeFile, intestazioni, righe) {
   const escapeCsv = (valore) => `"${String(valore ?? "").replaceAll('"', '""')}"`;
   const contenuto = [intestazioni, ...righe]
@@ -89,7 +98,7 @@ function Clienti() {
           valoreCliente(cliente, "idCliente", "clienteCode"),
           cliente.ragioneSociale,
           cliente.referente,
-          valoreCliente(cliente, "amministratore", "associazione"),
+          amministratoreVisibile(cliente),
           cliente.telefono,
           valoreCliente(cliente, "emailPrincipale", "email"),
           cliente.emailReferente,
@@ -186,7 +195,6 @@ function Clienti() {
       ragioneSociale: form.ragioneSociale.trim(),
       referente: form.referente.trim(),
       amministratore: form.associazione.trim(),
-      associazione: form.associazione.trim(),
       telefono: form.telefono.trim(),
       emailPrincipale: form.email.trim(),
       email: form.email.trim(),
@@ -225,7 +233,7 @@ function Clienti() {
       clienteCode: valoreCliente(cliente, "idCliente", "clienteCode"),
       ragioneSociale: cliente.ragioneSociale || "",
       referente: cliente.referente || "",
-      associazione: valoreCliente(cliente, "amministratore", "associazione"),
+      associazione: amministratoreVisibile(cliente),
       telefono: cliente.telefono || "",
       email: valoreCliente(cliente, "emailPrincipale", "email"),
       emailReferente: cliente.emailReferente || "",
@@ -541,7 +549,7 @@ function Clienti() {
                   <tr key={cliente.id}>
                     <td style={{ fontWeight: 800 }}>{valoreCliente(cliente, "idCliente", "clienteCode")}</td>
                     <td style={{ fontWeight: 800, textAlign: "left" }}>{cliente.ragioneSociale}</td>
-                    <td>{valoreCliente(cliente, "amministratore", "associazione")}</td>
+                    <td>{amministratoreVisibile(cliente)}</td>
                     <td>{cliente.telefono}</td>
                     <td>{valoreCliente(cliente, "emailPrincipale", "email")}</td>
                     <td>{cliente.comune}</td>
