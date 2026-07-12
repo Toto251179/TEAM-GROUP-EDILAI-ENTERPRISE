@@ -66,6 +66,7 @@ function AppRouter() {
       <Route path="/ordini-materiali" element={<OrdiniMateriali />} />
       <Route path="/magazzino" element={<Magazzino />} />
       <Route path="/fornitori" element={<Fornitori />} />
+      <Route path="/rapportini" element={<GiornaleCantiere />} />
       <Route path="/giornale-cantiere" element={<GiornaleCantiere />} />
       <Route path="/operai" element={<Operai />} />
       <Route path="/presenze" element={<Presenze />} />

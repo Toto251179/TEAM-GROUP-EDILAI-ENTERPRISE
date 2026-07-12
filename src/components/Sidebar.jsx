@@ -1,13 +1,28 @@
 import { NavLink } from "react-router-dom";
 import {
+  BarChart3,
   BookOpen,
+  Boxes,
+  BriefcaseBusiness,
   Building2,
+  CalendarDays,
+  Camera,
+  Car,
   ClipboardCheck,
   ClipboardList,
   FileText,
+  FolderOpen,
   HardHat,
   LayoutDashboard,
+  Map,
+  MapPinned,
+  PackageCheck,
+  Receipt,
+  Settings,
+  Truck,
   Users,
+  Wallet,
+  Wrench,
 } from "lucide-react";
 import { azienda } from "../config/azienda";
 
@@ -23,12 +38,48 @@ const menuSections = [
     ],
   },
   {
+    title: "Centro Operativo",
+    items: [
+      { label: "Centro Operativo", icon: MapPinned, path: "/centro-operativo" },
+      { label: "Calendario Interventi", icon: CalendarDays, path: "/centro-operativo/calendario-interventi" },
+      { label: "Squadre e Tecnici", icon: Users, path: "/centro-operativo/squadre-tecnici" },
+      { label: "Percorsi e Navigazione", icon: Map, path: "/centro-operativo/percorsi-navigazione" },
+    ],
+  },
+  {
     title: "Produzione",
     items: [
+      { label: "Cronoprogramma", icon: CalendarDays, path: "/cronoprogramma" },
       { label: "Chiamate Tecnici", icon: ClipboardCheck, path: "/chiamate-tecnici" },
-      { label: "Rapportini", icon: ClipboardList, path: "/giornale-cantiere" },
+      { label: "SAL", icon: BarChart3, path: "/sal" },
+      { label: "Rapportini Lavori", icon: ClipboardList, path: "/rapportini" },
+      { label: "Controllo Cantieri", icon: ClipboardCheck, path: "/controllo-cantieri" },
+      { label: "Foto Cantieri", icon: Camera, path: "/foto-cantiere" },
+      { label: "Giornale Cantiere", icon: ClipboardList, path: "/giornale-cantiere" },
+      { label: "Verbali Cantiere", icon: FileText, path: "/verbali-cantiere" },
+    ],
+  },
+  {
+    title: "Acquisti e Risorse",
+    items: [
+      { label: "Ordini Materiali", icon: PackageCheck, path: "/ordini-materiali" },
+      { label: "Magazzino", icon: Boxes, path: "/magazzino" },
+      { label: "Fornitori", icon: Truck, path: "/fornitori" },
+      { label: "Subappaltatori", icon: BriefcaseBusiness, path: "/subappaltatori" },
       { label: "Operai", icon: HardHat, path: "/operai" },
       { label: "Squadre", icon: Users, path: "/squadre" },
+      { label: "Presenze Operai", icon: CalendarDays, path: "/presenze" },
+      { label: "Mezzi Aziendali", icon: Car, path: "/mezzi" },
+      { label: "Attrezzature e DPI", icon: Wrench, path: "/attrezzature" },
+    ],
+  },
+  {
+    title: "Amministrazione",
+    items: [
+      { label: "Contabilita", icon: Wallet, path: "/contabilita" },
+      { label: "Fatture", icon: Receipt, path: "/fatture" },
+      { label: "Documenti", icon: FolderOpen, path: "/documentale" },
+      { label: "Impostazioni", icon: Settings, path: "/impostazioni/configurazione-sistema" },
     ],
   },
 ];
