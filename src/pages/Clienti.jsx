@@ -516,7 +516,6 @@ function Clienti() {
                 <tr>
                   <th>ID Cliente</th>
                   <th>Ragione Sociale</th>
-                  <th>Referente</th>
                   <th>Amministratore</th>
                   <th>Telefono</th>
                   <th>Email principale</th>
@@ -532,7 +531,7 @@ function Clienti() {
               <tbody>
                 {clientiFiltrati.length === 0 && (
                   <tr>
-                    <td colSpan="12" style={{ padding: "22px", color: "#64748b" }}>
+                    <td colSpan="11" style={{ padding: "22px", color: "#64748b" }}>
                       Nessun cliente trovato. Crea una nuova anagrafica o modifica la ricerca.
                     </td>
                   </tr>
@@ -542,7 +541,6 @@ function Clienti() {
                   <tr key={cliente.id}>
                     <td style={{ fontWeight: 800 }}>{valoreCliente(cliente, "idCliente", "clienteCode")}</td>
                     <td style={{ fontWeight: 800, textAlign: "left" }}>{cliente.ragioneSociale}</td>
-                    <td>{cliente.referente}</td>
                     <td>{valoreCliente(cliente, "amministratore", "associazione")}</td>
                     <td>{cliente.telefono}</td>
                     <td>{valoreCliente(cliente, "emailPrincipale", "email")}</td>
