@@ -1,3 +1,5 @@
+Prima di modificare il progetto leggere obbligatoriamente AGENTS.md e docs/MASTER_SPECIFICATION.md.
+
 # React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
