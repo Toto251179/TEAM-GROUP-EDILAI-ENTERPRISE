@@ -422,3 +422,25 @@ export async function trovaPdfPreventivoArchiviato(preventivo, clientiArchivio =
     exists: await pathExists(filePath),
   };
 }
+
+export async function assicuraCartellaPreventiviCliente(preventivo, clientiArchivio = [], outputDir = env.preventivi.outputDir) {
+  const rootOutputDir = await resolvePreventiviOutputDir(outputDir);
+  await fs.mkdir(rootOutputDir, { recursive: true });
+  const clienteNome = getClienteNome(preventivo, clientiArchivio) || "CLIENTE";
+  const clienteCode = getClienteCode(preventivo, clientiArchivio) || "SENZA-ID";
+  const clientiRoot = path.join(rootOutputDir, "CLIENTI");
+  const clienteFolderName = safeFileName(`${clienteCode} - ${clienteNome}`);
+  const clienteFolderPath = await ensureCanonicalDirectory(clientiRoot, clienteFolderName, `${safeFileName(clienteCode)} - `);
+  const preventiviRoot = path.join(clienteFolderPath, "PREVENTIVI");
+  await ensureDir(preventiviRoot);
+
+  return {
+    rootPath: rootOutputDir,
+    clientiRoot,
+    clienteFolderName: path.basename(clienteFolderPath),
+    clienteFolderPath,
+    folderName: "PREVENTIVI",
+    folderPath: preventiviRoot,
+    exists: await pathExists(preventiviRoot),
+  };
+}

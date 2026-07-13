@@ -426,6 +426,7 @@ function Preventivi() {
   const [messaggio, setMessaggio] = useState("");
   const [archivioInCorso, setArchivioInCorso] = useState("");
   const [menuAzioni, setMenuAzioni] = useState({ anchorEl: null, preventivo: null });
+  const [cartellePreventivi, setCartellePreventivi] = useState({});
 
   const menuAzioniAperto = Boolean(menuAzioni.anchorEl);
   const actionButtonSx = {
@@ -452,6 +453,23 @@ function Preventivi() {
     const preventivo = menuAzioni.preventivo;
     chiudiMenuAzioni();
     if (preventivo) azione(preventivo);
+  };
+
+  const caricaCartellePreventivi = async (listaPreventivi) => {
+    const risultati = await Promise.allSettled(
+      listaPreventivi.map(async (preventivo) => {
+        const cartella = await api.get(`/preventivi/${preventivo.id}/cartella`);
+        return [preventivo.id, cartella];
+      }),
+    );
+    const mappa = {};
+    risultati.forEach((result) => {
+      if (result.status === "fulfilled") {
+        const [id, cartella] = result.value;
+        mappa[id] = cartella;
+      }
+    });
+    setCartellePreventivi((corrente) => ({ ...corrente, ...mappa }));
   };
 
   useEffect(() => {
@@ -492,6 +510,7 @@ function Preventivi() {
           if (vocePrezzarioRaw) localStorage.removeItem("teamGroupVocePrezzario");
 
           setPreventivi(preventiviDb);
+          caricaCartellePreventivi(preventiviDb);
           setClienti(clientiDb);
           setCantieri(cantieriDb);
           if (vocePrezzario) {
@@ -630,6 +649,7 @@ function Preventivi() {
     ]);
 
     setPreventivi(preventiviDb);
+    caricaCartellePreventivi(preventiviDb);
     if (clientiResult.status === "fulfilled") setClienti(clientiResult.value);
     if (cantieriResult.status === "fulfilled") setCantieri(cantieriResult.value);
 
@@ -823,9 +843,63 @@ function Preventivi() {
     setMessaggio("");
 
     try {
-      await api.post(`/preventivi/${preventivo.id}/apri-cartella`, {});
+      const risposta = await api.post(`/preventivi/${preventivo.id}/apri-cartella`, {});
+      setCartellePreventivi((corrente) => ({
+        ...corrente,
+        [preventivo.id]: { ...(corrente[preventivo.id] || {}), folderPath: risposta.folderPath, exists: true },
+      }));
+      setMessaggio(`Cartella aperta: ${risposta.folderPath}`);
     } catch (error) {
       setErrore(error.message);
+    }
+  };
+
+  const copiaPercorsoPreventivo = async (preventivo) => {
+    setErrore("");
+    setMessaggio("");
+
+    try {
+      const risposta = await api.post(`/preventivi/${preventivo.id}/copia-percorso`, {});
+      const cartella = {
+        ...(cartellePreventivi[preventivo.id] || {}),
+        folderPath: risposta.folderPath,
+        exists: true,
+      };
+      setCartellePreventivi((corrente) => ({ ...corrente, [preventivo.id]: cartella }));
+      setMessaggio(`Percorso copiato: ${risposta.folderPath}`);
+    } catch (backendError) {
+      try {
+        const cartella = cartellePreventivi[preventivo.id] || await api.get(`/preventivi/${preventivo.id}/cartella`);
+        const percorso = cartella.folderPath;
+        if (!percorso) throw new Error("Percorso cartella non disponibile.");
+        let copiato = false;
+        if (navigator.clipboard?.writeText) {
+          try {
+            await navigator.clipboard.writeText(percorso);
+            copiato = true;
+          } catch {
+            copiato = false;
+          }
+        }
+        if (!copiato) {
+          const input = document.createElement("textarea");
+          input.value = percorso;
+          input.setAttribute("readonly", "true");
+          input.style.position = "fixed";
+          input.style.left = "-9999px";
+          document.body.appendChild(input);
+          input.focus();
+          input.select();
+          copiato = document.execCommand("copy");
+          document.body.removeChild(input);
+        }
+        if (!copiato) throw new Error("Copia percorso non riuscita. Copiare manualmente il percorso visualizzato.");
+        setCartellePreventivi((corrente) => ({ ...corrente, [preventivo.id]: cartella }));
+        setMessaggio(`Percorso copiato: ${percorso}`);
+        if (backendError?.message) console.warn(backendError.message);
+      } catch (error) {
+        setErrore(error.message);
+      }
     }
   };
 
@@ -1445,9 +1519,10 @@ function Preventivi() {
           importoGrid: imponibile,
           totaleGrid: totale,
           righeCount: righe.length,
+          folderPath: cartellePreventivi[preventivo.id]?.folderPath || "",
         };
       }),
-    [preventiviFiltrati, clienti],
+    [preventiviFiltrati, clienti, cartellePreventivi],
   );
 
   const colonnePreventiviGrid = useMemo(
@@ -1504,6 +1579,32 @@ function Preventivi() {
         minWidth: 120,
       },
       {
+        field: "folderPath",
+        headerName: "Percorso cartella",
+        minWidth: 680,
+        flex: 1.6,
+        sortable: false,
+        renderCell: (params) => {
+          const preventivo = params.row;
+          return (
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", width: "100%", overflow: "hidden" }}>
+              <span title={params.value || "Percorso non disponibile"} style={{ minWidth: 180, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {params.value || "Cartella in preparazione"}
+              </span>
+              <MuiButton size="small" variant="outlined" sx={{ minWidth: 112, height: 32, px: 1 }} onClick={() => apriCartellaPreventivo(preventivo)}>
+                Apri Cartella
+              </MuiButton>
+              <MuiButton size="small" variant="outlined" sx={{ minWidth: 88, height: 32, px: 1 }} onClick={() => apriPdfPreventivo(preventivo)}>
+                Apri PDF
+              </MuiButton>
+              <MuiButton size="small" variant="outlined" sx={{ minWidth: 116, height: 32, px: 1 }} onClick={() => copiaPercorsoPreventivo(preventivo)}>
+                Copia Percorso
+              </MuiButton>
+            </Stack>
+          );
+        },
+      },
+      {
         field: "azioni",
         headerName: "Azioni",
         minWidth: 460,
@@ -1542,7 +1643,7 @@ function Preventivi() {
         },
       },
     ],
-    [clienti, archivioInCorso],
+    [clienti, archivioInCorso, cartellePreventivi],
   );
 
   const card = {
@@ -1659,6 +1760,26 @@ function Preventivi() {
             Via: {formatViaCivico(form.indirizzo)}<br />
             CAP: {form.indirizzo.cap || ""}<br />
             Comune: {form.indirizzo.comune || ""}
+          </div>
+        )}
+
+        {form.id && (
+          <div style={{ marginTop: "14px", padding: "12px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "#f8fafc" }}>
+            <strong>Percorso cartella:</strong>
+            <p style={{ margin: "8px 0", wordBreak: "break-all", color: "#334155" }}>
+              {cartellePreventivi[form.id]?.folderPath || "Cartella in preparazione"}
+            </p>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <button type="button" onClick={() => apriCartellaPreventivo({ id: form.id, numero: form.numero })}>
+                Apri Cartella
+              </button>
+              <button type="button" onClick={() => apriPdfPreventivo({ id: form.id, numero: form.numero })}>
+                Apri PDF
+              </button>
+              <button type="button" onClick={() => copiaPercorsoPreventivo({ id: form.id, numero: form.numero })}>
+                Copia Percorso
+              </button>
+            </div>
           </div>
         )}
 

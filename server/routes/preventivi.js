@@ -2,10 +2,11 @@ import { Router } from "express";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { query } from "../config/db.js";
 import { createCrudRepository } from "../utils/crud.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { archiviaPdfPreventivo, trovaPdfPreventivoArchiviato } from "../utils/preventivoPdf.js";
+import { archiviaPdfPreventivo, assicuraCartellaPreventiviCliente, trovaPdfPreventivoArchiviato } from "../utils/preventivoPdf.js";
 
 const repository = createCrudRepository({
   table: "preventivi",
@@ -745,6 +746,22 @@ router.post("/:id/pdf", asyncHandler(async (req, res) => {
   }
 }));
 
+router.get("/:id/cartella", asyncHandler(async (req, res) => {
+  const preventivo = await getPreventivoCompleto(req.params.id);
+  if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
+
+  const cliente = await getClienteCompleto(preventivo.clienteId);
+  const archivio = await assicuraCartellaPreventiviCliente(preventivo, cliente ? [cliente] : undefined);
+  console.log("folderPath", archivio.folderPath);
+  console.log("fs.existsSync(folderPath)", fsSync.existsSync(archivio.folderPath));
+  res.json({
+    message: "Cartella preventivi cliente disponibile.",
+    folderPath: archivio.folderPath,
+    clienteFolderPath: archivio.clienteFolderPath,
+    exists: archivio.exists,
+  });
+}));
+
 router.post("/:id/archivia-pdf", asyncHandler(async (req, res) => {
   const preventivo = await getPreventivoCompleto(req.params.id);
   if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
@@ -782,21 +799,50 @@ router.post("/:id/apri-cartella", asyncHandler(async (req, res) => {
   if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
 
   const cliente = await getClienteCompleto(preventivo.clienteId);
-  let archivio;
+  const archivio = await assicuraCartellaPreventiviCliente(preventivo, cliente ? [cliente] : undefined);
+  const folderPath = archivio.folderPath;
+  console.log("folderPath", folderPath);
+  console.log("fs.existsSync(folderPath)", fsSync.existsSync(folderPath));
   try {
-    archivio = await archiviaPdfPreventivo(preventivo, cliente ? [cliente] : undefined);
-    await fs.access(archivio.folderPath);
-    spawn("explorer.exe", [archivio.folderPath], { detached: true, stdio: "ignore" }).unref();
+    await fs.access(folderPath);
+    spawn("explorer.exe", [folderPath], { detached: true, stdio: "ignore" }).unref();
   } catch (error) {
     return res.status(500).json({
       message: "Apertura cartella non riuscita.",
-      percorsoCercato: archivio?.folderPath || process.env.PREVENTIVI_OUTPUT_DIR || "",
+      percorsoCercato: folderPath || process.env.PREVENTIVI_OUTPUT_DIR || "",
       errore: error.message,
       motivo: error.code || "Errore apertura cartella",
     });
   }
 
-  res.json({ message: "Cartella aperta.", folderPath: archivio.folderPath });
+  res.json({ message: "Cartella aperta.", folderPath });
+}));
+
+router.post("/:id/copia-percorso", asyncHandler(async (req, res) => {
+  const preventivo = await getPreventivoCompleto(req.params.id);
+  if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
+
+  const cliente = await getClienteCompleto(preventivo.clienteId);
+  const archivio = await assicuraCartellaPreventiviCliente(preventivo, cliente ? [cliente] : undefined);
+  const folderPath = archivio.folderPath;
+  console.log("folderPath", folderPath);
+  console.log("fs.existsSync(folderPath)", fsSync.existsSync(folderPath));
+
+  try {
+    const clip = spawn("clip.exe", [], { stdio: ["pipe", "ignore", "pipe"] });
+    clip.stdin.end(folderPath);
+    const [code] = await once(clip, "close");
+    if (code !== 0) throw new Error(`clip.exe terminato con codice ${code}`);
+  } catch (error) {
+    return res.status(500).json({
+      message: "Copia percorso non riuscita.",
+      percorsoCercato: folderPath,
+      errore: error.message,
+      motivo: error.code || "Errore copia percorso",
+    });
+  }
+
+  res.json({ message: "Percorso copiato.", folderPath });
 }));
 
 router.post("/:id/apri-pdf", asyncHandler(async (req, res) => {
