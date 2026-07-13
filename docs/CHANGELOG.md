@@ -7,6 +7,32 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 # Versione 1.0
 
+## 2026-07-13
+
+### Restyling Elenco Cantieri
+
+Modifiche:
+
+- Applicato layout Enterprise alla tabella Elenco Cantieri.
+- Consolidate le azioni secondarie nel menu della riga.
+- Aggiunti badge stato compatti e visualizzazione responsive a card su smartphone.
+
+Test eseguiti:
+
+- Ricerca.
+- Filtro stato.
+- Azioni Modifica, Rapportino, Dettaglio, Giornale Cantiere, Elimina.
+- Esporta CSV.
+- Paginazione.
+- Browser test pagina /cantieri.
+- Build frontend completata.
+
+Risultato build:
+
+Completata.
+
+---
+
 ## 2026-07-12
 
 ### Sprint 1.1 - Clienti
