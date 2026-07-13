@@ -7,6 +7,7 @@ import {
   Chip,
   FormControl,
   InputLabel,
+  Menu,
   MenuItem,
   Paper,
   Select,
@@ -403,6 +404,34 @@ function Preventivi() {
   const [errore, setErrore] = useState("");
   const [messaggio, setMessaggio] = useState("");
   const [archivioInCorso, setArchivioInCorso] = useState("");
+  const [menuAzioni, setMenuAzioni] = useState({ anchorEl: null, preventivo: null });
+
+  const menuAzioniAperto = Boolean(menuAzioni.anchorEl);
+  const actionButtonSx = {
+    width: 96,
+    minWidth: 96,
+    height: 34,
+    px: 1.5,
+    justifyContent: "center",
+    whiteSpace: "nowrap",
+    fontWeight: 700,
+    borderRadius: "6px",
+    textTransform: "none",
+  };
+
+  const apriMenuAzioni = (event, preventivo) => {
+    setMenuAzioni({ anchorEl: event.currentTarget, preventivo });
+  };
+
+  const chiudiMenuAzioni = () => {
+    setMenuAzioni({ anchorEl: null, preventivo: null });
+  };
+
+  const eseguiAzioneMenu = (azione) => {
+    const preventivo = menuAzioni.preventivo;
+    chiudiMenuAzioni();
+    if (preventivo) azione(preventivo);
+  };
 
   useEffect(() => {
     let componenteAttivo = true;
@@ -1358,33 +1387,36 @@ function Preventivi() {
       {
         field: "azioni",
         headerName: "Azioni",
-        minWidth: 760,
+        minWidth: 460,
+        flex: 1,
         sortable: false,
         filterable: false,
         renderCell: (params) => {
           const preventivo = params.row;
           return (
-            <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", height: "100%", flexWrap: "wrap" }}>
-              <MuiButton size="small" variant="outlined" onClick={() => modificaPreventivo(preventivo)}>
+            <Stack
+              direction="row"
+              spacing={0.75}
+              sx={{
+                alignItems: "center",
+                justifyContent: "flex-start",
+                height: "100%",
+                width: "100%",
+                minWidth: 0,
+                overflow: "hidden",
+              }}
+            >
+              <MuiButton size="small" variant="outlined" sx={actionButtonSx} onClick={() => modificaPreventivo(preventivo)}>
                 Modifica
               </MuiButton>
-              <MuiButton size="small" variant="outlined" disabled={preventivo.stato === "Annullato"} onClick={() => creaRevisionePreventivo(preventivo)}>
-                Duplica
-              </MuiButton>
-              <MuiButton size="small" variant="outlined" onClick={() => generaPDF(preventivo)}>
+              <MuiButton size="small" variant="outlined" sx={actionButtonSx} onClick={() => generaPDF(preventivo)}>
                 {archivioInCorso === String(preventivo.id) ? "Archivio..." : "PDF"}
               </MuiButton>
-              <MuiButton size="small" variant="outlined" onClick={() => apriCartellaPreventivo(preventivo)}>
-                Apri cartella
+              <MuiButton size="small" variant="outlined" sx={actionButtonSx} disabled={preventivo.stato === "Annullato"} onClick={() => creaRevisionePreventivo(preventivo)}>
+                Duplica
               </MuiButton>
-              <MuiButton size="small" variant="outlined" onClick={() => apriPdfPreventivo(preventivo)}>
-                Apri PDF
-              </MuiButton>
-              <MuiButton size="small" variant="contained" onClick={() => accettaECreaCantiere(preventivo)}>
-                Trasforma in Cantiere
-              </MuiButton>
-              <MuiButton size="small" color="error" variant="outlined" onClick={() => eliminaPreventivo(preventivo)}>
-                Elimina
+              <MuiButton size="small" variant="contained" sx={actionButtonSx} onClick={(event) => apriMenuAzioni(event, preventivo)}>
+                Altro
               </MuiButton>
             </Stack>
           );
@@ -1864,6 +1896,17 @@ function Preventivi() {
               },
             }}
           />
+          <Menu
+            anchorEl={menuAzioni.anchorEl}
+            open={menuAzioniAperto}
+            onClose={chiudiMenuAzioni}
+            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+            transformOrigin={{ vertical: "top", horizontal: "right" }}
+          >
+            <MenuItem onClick={() => eseguiAzioneMenu(accettaECreaCantiere)}>Trasforma in Cantiere</MenuItem>
+            <MenuItem onClick={() => eseguiAzioneMenu(apriPdfPreventivo)}>Apri PDF</MenuItem>
+            <MenuItem sx={{ color: "error.main" }} onClick={() => eseguiAzioneMenu(eliminaPreventivo)}>Elimina</MenuItem>
+          </Menu>
         </Box>
       </Paper>
 
