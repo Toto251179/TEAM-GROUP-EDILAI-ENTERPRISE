@@ -5,7 +5,6 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { env } from "../config/env.js";
 import {
-  deduplicaRighePdf,
   getUnitaRiga,
   numeroPreventivo,
 } from "./preventivoCalcoli.js";
@@ -196,41 +195,62 @@ function hasValue(value) {
   return value !== null && value !== undefined && value !== "";
 }
 
-function getRigaPdfValori(riga = {}) {
-  const importo = hasValue(riga.importo) ? numeroPreventivo(riga.importo) : numeroPreventivo(riga.totale);
+function numeroCampoApi(source, field, context) {
+  if (!hasValue(source?.[field])) {
+    const error = new Error(`Campo API mancante per PDF: ${context}.${field}`);
+    error.code = "PDF_CAMPO_API_MANCANTE";
+    throw error;
+  }
+  return numeroPreventivo(source[field]);
+}
 
+function getRigaPdfValori(riga = {}) {
   return {
-    quantita: numeroPreventivo(riga.quantita),
-    prezzoUnitario: numeroPreventivo(riga.prezzoUnitario ?? riga.prezzo_unitario),
-    importoLordo: numeroPreventivo(riga.importoLordo ?? riga.importo_lordo),
-    importo,
-    totale: hasValue(riga.totale) ? numeroPreventivo(riga.totale) : importo,
+    quantita: numeroCampoApi(riga, "quantita", "riga"),
+    prezzoUnitario: numeroCampoApi(riga, "prezzoUnitario", "riga"),
+    importoLordo: numeroCampoApi(riga, "importoLordo", "riga"),
+    importo: numeroCampoApi(riga, "importo", "riga"),
+    totale: numeroCampoApi(riga, "totale", "riga"),
   };
 }
 
-function getTotaliPdf(preventivo = {}, righe = []) {
-  const lordo = hasValue(preventivo.lordo)
-    ? numeroPreventivo(preventivo.lordo)
-    : righe.reduce((somma, riga) => somma + getRigaPdfValori(riga).importoLordo, 0);
-  const imponibile = hasValue(preventivo.imponibile)
-    ? numeroPreventivo(preventivo.imponibile)
-    : hasValue(preventivo.importo)
-      ? numeroPreventivo(preventivo.importo)
-      : righe.reduce((somma, riga) => somma + getRigaPdfValori(riga).importo, 0);
-  const sconto = hasValue(preventivo.sconto)
-    ? numeroPreventivo(preventivo.sconto)
-    : Number((lordo - imponibile).toFixed(2));
-  const ivaAliquota = numeroPreventivo(preventivo.ivaPercentuale ?? preventivo.ivaAliquota ?? 22);
-  const ivaImporto = hasValue(preventivo.ivaImporto)
-    ? numeroPreventivo(preventivo.ivaImporto)
-    : hasValue(preventivo.iva_importo)
-      ? numeroPreventivo(preventivo.iva_importo)
-      : 0;
-  const totale = hasValue(preventivo.totale)
-    ? numeroPreventivo(preventivo.totale)
-    : Number((imponibile + ivaImporto).toFixed(2));
+function getTotaliPdf(preventivo = {}) {
+  const lordo = numeroCampoApi(preventivo, "lordo", "preventivo");
+  const sconto = numeroCampoApi(preventivo, "sconto", "preventivo");
+  const imponibile = numeroCampoApi(preventivo, "imponibile", "preventivo");
+  const ivaAliquota = numeroCampoApi(preventivo, "ivaPercentuale", "preventivo");
+  const ivaImporto = numeroCampoApi(preventivo, "ivaImporto", "preventivo");
+  const totale = numeroCampoApi(preventivo, "totale", "preventivo");
 
   return { lordo, sconto, imponibile, ivaAliquota, ivaImporto, totale };
+}
+
+function chiaveRigaPdfApi(riga = {}) {
+  const valori = getRigaPdfValori(riga);
+  return [
+    String(riga.codice ?? "").trim().toLowerCase(),
+    String(riga.descrizione ?? "").trim().replace(/\s+/g, " ").toLowerCase(),
+    String(riga.unita ?? "").trim().toLowerCase(),
+    valori.quantita.toFixed(4),
+    valori.prezzoUnitario.toFixed(4),
+    valori.importoLordo.toFixed(4),
+    valori.importo.toFixed(4),
+    valori.totale.toFixed(4),
+  ].join("|");
+}
+
+function deduplicaRighePdfApi(righe = []) {
+  const risultato = [];
+  let chiavePrecedente = null;
+
+  for (const riga of Array.isArray(righe) ? righe : []) {
+    const chiave = chiaveRigaPdfApi(riga);
+    if (chiave && chiave === chiavePrecedente) continue;
+    risultato.push(riga);
+    chiavePrecedente = chiave;
+  }
+
+  return risultato;
 }
 
 function formatMisuraPdf(riga, campo) {
@@ -275,8 +295,8 @@ function disegnaRiquadroClienteCode(doc, clienteCode) {
 
 export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []) {
   const doc = new jsPDF();
-  const righe = deduplicaRighePdf(preventivo.righe || []);
-  const totaliPdf = getTotaliPdf(preventivo, righe);
+  const righe = deduplicaRighePdfApi(preventivo.righe || []);
+  const totaliPdf = getTotaliPdf(preventivo);
   let y = 18;
 
   await disegnaLogo(doc, y);

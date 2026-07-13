@@ -208,39 +208,30 @@ function hasValue(value) {
   return value !== null && value !== undefined && value !== "";
 }
 
-function getRigaPdfValori(riga = {}) {
-  const importo = hasValue(riga.importo) ? numeroPreventivo(riga.importo) : numeroPreventivo(riga.totale);
+function numeroCampoApi(source, field, context) {
+  if (!hasValue(source?.[field])) {
+    throw new Error(`Campo API mancante per PDF: ${context}.${field}`);
+  }
+  return numeroPreventivo(source[field]);
+}
 
+function getRigaPdfValori(riga = {}) {
   return {
-    quantita: numeroPreventivo(riga.quantita),
-    prezzoUnitario: numeroPreventivo(riga.prezzoUnitario ?? riga.prezzo_unitario),
-    importoLordo: numeroPreventivo(riga.importoLordo ?? riga.importo_lordo),
-    importo,
-    totale: hasValue(riga.totale) ? numeroPreventivo(riga.totale) : importo,
+    quantita: numeroCampoApi(riga, "quantita", "riga"),
+    prezzoUnitario: numeroCampoApi(riga, "prezzoUnitario", "riga"),
+    importoLordo: numeroCampoApi(riga, "importoLordo", "riga"),
+    importo: numeroCampoApi(riga, "importo", "riga"),
+    totale: numeroCampoApi(riga, "totale", "riga"),
   };
 }
 
-function getTotaliPdf(preventivo = {}, righe = []) {
-  const lordo = hasValue(preventivo.lordo)
-    ? numeroPreventivo(preventivo.lordo)
-    : righe.reduce((somma, riga) => somma + getRigaPdfValori(riga).importoLordo, 0);
-  const imponibile = hasValue(preventivo.imponibile)
-    ? numeroPreventivo(preventivo.imponibile)
-    : hasValue(preventivo.importo)
-      ? numeroPreventivo(preventivo.importo)
-      : righe.reduce((somma, riga) => somma + getRigaPdfValori(riga).importo, 0);
-  const sconto = hasValue(preventivo.sconto)
-    ? numeroPreventivo(preventivo.sconto)
-    : Number((lordo - imponibile).toFixed(2));
-  const ivaAliquota = normalizzaIvaAliquota(preventivo.ivaPercentuale ?? preventivo.ivaAliquota ?? IVA_DEFAULT);
-  const iva = hasValue(preventivo.ivaImporto)
-    ? numeroPreventivo(preventivo.ivaImporto)
-    : hasValue(preventivo.iva_importo)
-      ? numeroPreventivo(preventivo.iva_importo)
-      : 0;
-  const totale = hasValue(preventivo.totale)
-    ? numeroPreventivo(preventivo.totale)
-    : Number((imponibile + iva).toFixed(2));
+function getTotaliPdf(preventivo = {}) {
+  const lordo = numeroCampoApi(preventivo, "lordo", "preventivo");
+  const sconto = numeroCampoApi(preventivo, "sconto", "preventivo");
+  const imponibile = numeroCampoApi(preventivo, "imponibile", "preventivo");
+  const ivaAliquota = numeroCampoApi(preventivo, "ivaPercentuale", "preventivo");
+  const iva = numeroCampoApi(preventivo, "ivaImporto", "preventivo");
+  const totale = numeroCampoApi(preventivo, "totale", "preventivo");
 
   return { lordo, sconto, imponibile, iva, ivaImporto: iva, totale, ivaAliquota };
 }

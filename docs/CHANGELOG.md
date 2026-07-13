@@ -9,6 +9,24 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-13
 
+### Allineamento motore PDF ai dati Preventivi
+
+Correzioni:
+
+- Il motore PDF Preventivi usa solo i campi API `quantita`, `prezzoUnitario`, `importoLordo`, `importo`, `totale`, `imponibile`, `ivaPercentuale`, `ivaImporto`, `lordo` e `sconto`.
+- Rimossi dal PDF i fallback che ricalcolavano totali riga, imponibile, IVA e totale complessivo.
+- La deduplica PDF confronta i campi API gia normalizzati e non richiama il motore di calcolo.
+- L'API Preventivi espone `lordo` e `sconto` per permettere al PDF di stampare il riepilogo senza formule interne.
+
+Test eseguiti:
+
+- Creazione preventivo reale temporaneo con righe a corpo, cad e mq.
+- Confronto API, dati passati al PDF e PDF finale per quantita, prezzo unitario, importo lordo, importo, imponibile, IVA e totale.
+- Verifica assenza righe duplicate nel PDF.
+- Build frontend completata.
+
+---
+
 ### Chiusura modulo Preventivi Enterprise 1.0
 
 Correzioni:

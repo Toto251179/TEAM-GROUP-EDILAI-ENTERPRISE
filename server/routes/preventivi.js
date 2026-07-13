@@ -366,12 +366,20 @@ async function getPreventivoCompleto(id) {
     preventivo.ivaPercentuale ??
     preventivo.ivaAliquota ??
     22;
+  const righe = await getRighe(id);
+  const lordo = Number(righe.reduce((totale, riga) => totale + numeroPreventivo(riga.importoLordo), 0).toFixed(2));
+  const sconto = Number(righe.reduce(
+    (totale, riga) => totale + (numeroPreventivo(riga.importoLordo) - numeroPreventivo(riga.importo)),
+    0,
+  ).toFixed(2));
 
   return {
     ...preventivo,
+    lordo,
+    sconto,
     ivaAliquota,
     ivaPercentuale: ivaAliquota,
-    righe: await getRighe(id),
+    righe,
   };
 }
 
@@ -614,11 +622,22 @@ router.get("/", asyncHandler(async (req, res) => {
   const preventivi = await getPreventiviBase();
   const ivaAliquote = await getIvaAliquote(preventivi.map((preventivo) => preventivo.id));
   const completi = await Promise.all(
-    preventivi.map(async (preventivo) => ({
-      ...preventivo,
-      ivaAliquota: ivaAliquote.get(Number(preventivo.id)) ?? 22,
-      righe: await getRighe(preventivo.id),
-    })),
+    preventivi.map(async (preventivo) => {
+      const righe = await getRighe(preventivo.id);
+      const lordo = Number(righe.reduce((totale, riga) => totale + numeroPreventivo(riga.importoLordo), 0).toFixed(2));
+      const sconto = Number(righe.reduce(
+        (totale, riga) => totale + (numeroPreventivo(riga.importoLordo) - numeroPreventivo(riga.importo)),
+        0,
+      ).toFixed(2));
+
+      return {
+        ...preventivo,
+        lordo,
+        sconto,
+        ivaAliquota: ivaAliquote.get(Number(preventivo.id)) ?? 22,
+        righe,
+      };
+    }),
   );
 
   res.json(completi);
