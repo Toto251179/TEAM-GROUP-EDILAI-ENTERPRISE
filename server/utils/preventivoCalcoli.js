@@ -26,6 +26,10 @@ export function numeroPreventivo(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+export function arrotondaEuro(value) {
+  return Number(numeroPreventivo(value).toFixed(2));
+}
+
 export function getUnitaRiga(riga = {}) {
   return String(riga.unita ?? riga.unitaMisura ?? riga.unita_misura ?? riga.um ?? "").trim();
 }
@@ -66,6 +70,15 @@ function prodottoMisure(misure) {
 
 export function calcolaQuantitaRiga(riga = {}) {
   const misure = getMisureRiga(riga);
+  const unita = getUnitaRiga(riga).toLowerCase();
+  const quantitaEsplicita = numeroPreventivo(
+    riga.quantita ?? riga.quantity ?? riga.qty ?? riga.qta,
+  );
+
+  if (unita.includes("corpo") || unita === "cad" || unita === "pz") {
+    return quantitaEsplicita > 0 ? Number(quantitaEsplicita.toFixed(2)) : 1;
+  }
+
   const haDimensioniReali =
     misure.lunghezza > 0 ||
     misure.larghezza > 0 ||
@@ -73,10 +86,6 @@ export function calcolaQuantitaRiga(riga = {}) {
     misure.partiUguali > 1;
 
   if (haDimensioniReali) return prodottoMisure(misure);
-
-  const quantitaEsplicita = numeroPreventivo(
-    riga.quantita ?? riga.quantità ?? riga.quantity ?? riga.qty ?? riga.qta,
-  );
   if (quantitaEsplicita > 0) return Number(quantitaEsplicita.toFixed(2));
 
   const haAlmenoUnaMisura = Object.values(misure).some((valore) => valore > 0);
@@ -88,26 +97,55 @@ export function calcolaQuantitaRiga(riga = {}) {
     return Number((totaleEsplicito / prezzo).toFixed(2));
   }
 
-  const unita = getUnitaRiga(riga).toLowerCase();
-  if (unita.includes("corpo") || unita === "cad" || unita === "pz") return 1;
-
-  // Una riga valorizzata con un prezzo non deve finire nel PDF con quantita 0.
-  // Questo copre anche le vecchie righe gia salvate con quantita = 0.
   if (prezzo > 0) return 1;
-
   return 0;
 }
 
-export function calcolaImportoRiga(riga = {}) {
+export function calcolaImportoLordoRiga(riga = {}) {
   const quantita = calcolaQuantitaRiga(riga);
   const prezzoUnitario = getPrezzoUnitarioRiga(riga);
-  const sconto = getScontoRiga(riga);
-  return Number((quantita * prezzoUnitario * (1 - sconto / 100)).toFixed(2));
+  return arrotondaEuro(quantita * prezzoUnitario);
+}
+
+export function calcolaScontoImportoRiga(riga = {}) {
+  return arrotondaEuro(calcolaImportoLordoRiga(riga) * getScontoRiga(riga) / 100);
+}
+
+export function calcolaImportoRiga(riga = {}) {
+  return arrotondaEuro(calcolaImportoLordoRiga(riga) - calcolaScontoImportoRiga(riga));
 }
 
 export function normalizzaIvaAliquota(ivaAliquota, valorePredefinito = 22) {
+  if (ivaAliquota === "" || ivaAliquota === null || ivaAliquota === undefined) return valorePredefinito;
   const valore = numeroPreventivo(ivaAliquota);
   return valore >= 0 && Number.isFinite(valore) ? valore : valorePredefinito;
+}
+
+export function calcolaTotaliPreventivo(righe = [], ivaAliquota = 22) {
+  const righeNormalizzate = Array.isArray(righe) ? righe : [];
+  const lordo = arrotondaEuro(
+    righeNormalizzate.reduce((totale, riga) => totale + calcolaImportoLordoRiga(riga), 0),
+  );
+  const sconto = arrotondaEuro(
+    righeNormalizzate.reduce((totale, riga) => totale + calcolaScontoImportoRiga(riga), 0),
+  );
+  const imponibile = arrotondaEuro(
+    righeNormalizzate.reduce((totale, riga) => totale + calcolaImportoRiga(riga), 0),
+  );
+  const ivaPercentuale = normalizzaIvaAliquota(ivaAliquota, 22);
+  const ivaImporto = arrotondaEuro(imponibile * ivaPercentuale / 100);
+  const totale = arrotondaEuro(imponibile + ivaImporto);
+
+  return {
+    lordo,
+    sconto,
+    imponibile,
+    ivaPercentuale,
+    ivaAliquota: ivaPercentuale,
+    ivaImporto,
+    iva: ivaImporto,
+    totale,
+  };
 }
 
 function chiaveRigaPdf(riga = {}) {

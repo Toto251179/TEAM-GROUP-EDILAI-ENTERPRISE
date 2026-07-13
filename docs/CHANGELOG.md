@@ -9,6 +9,34 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-13
 
+### Correzione calcoli Preventivi Enterprise e PDF
+
+Correzioni:
+
+- Centralizzata la normalizzazione numerica per quantita, prezzi, sconti, imponibile, IVA e totale.
+- Corretta la quantita per righe a corpo/cad usando la quantita manuale senza moltiplicare per misure a zero.
+- Corretta la quantita a misura con formula par.ug. x lunghezza x larghezza x H/peso.
+- Aggiunti salvataggio e restituzione di `imponibile`, `iva_percentuale`, `iva_importo`, `totale`, `importo_lordo` e `importo`.
+- Impostata IVA predefinita 22% quando l'aliquota e mancante.
+- Allineato il PDF ai valori normalizzati salvati da backend/PostgreSQL.
+- Aggiunto riepilogo PDF con imponibile, IVA 22% e totale complessivo.
+- Mantenuta la deduplica delle righe PDF identiche consecutive.
+
+Test eseguiti:
+
+- Riga corpo: quantita 1 x 1000,00 = 1000,00.
+- Riga cad: quantita 2 x 250,00 con sconto 10% = 450,00.
+- Riga mq: 1 x 10 x 5 x 1 x 130,53 = 6526,50.
+- Totali: lordo 8026,50, sconto 50,00, imponibile 7976,50, IVA 1754,83, totale 9731,33.
+- POST preventivo HTTP 201, GET dettaglio HTTP 200, PUT HTTP 200, GET PDF HTTP 200 application/pdf.
+- Verifica database su testata e righe preventivo.
+- Verifica persistenza dopo riavvio backend/frontend.
+- PDF renderizzato e verificato senza righe duplicate.
+- Preventivi, Clienti, Elenco Prezzi e Cantieri verificati nel browser senza errori console.
+- Build frontend completata.
+
+---
+
 ### Correzione PDF Preventivi: quantita, importi e cache
 
 Correzioni:

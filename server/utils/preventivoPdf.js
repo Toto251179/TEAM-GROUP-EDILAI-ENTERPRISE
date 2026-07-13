@@ -7,10 +7,10 @@ import { env } from "../config/env.js";
 import {
   calcolaImportoRiga,
   calcolaQuantitaRiga,
+  calcolaTotaliPreventivo,
   deduplicaRighePdf,
   getPrezzoUnitarioRiga,
   getUnitaRiga,
-  normalizzaIvaAliquota,
   numeroPreventivo,
 } from "./preventivoCalcoli.js";
 
@@ -197,9 +197,7 @@ function getOggettoPreventivo(preventivo) {
 }
 
 function calcolaTotali(righe = [], ivaAliquota = 22) {
-  const imponibile = Number(righe.reduce((totale, riga) => totale + calcolaImportoRiga(riga), 0).toFixed(2));
-  const aliquota = normalizzaIvaAliquota(ivaAliquota, 22);
-  return { imponibile, ivaAliquota: aliquota };
+  return calcolaTotaliPreventivo(righe, ivaAliquota);
 }
 
 function formatMisuraPdf(riga, campo) {
@@ -310,7 +308,27 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
   doc.setFont(undefined, "bold");
   doc.text("TOTALE", 164, totaleY + 3.7, { align: "right" });
   doc.text(formatEuro(totaliPdf.imponibile), 190.8, totaleY + 3.7, { align: "right" });
-  y = totaleY + 15.2;
+  y = totaleY + 10.2;
+
+  autoTable(doc, {
+    startY: y,
+    body: [
+      ["Imponibile", formatEuro(totaliPdf.imponibile)],
+      [`IVA ${formatNumero(totaliPdf.ivaAliquota)}%`, formatEuro(totaliPdf.ivaImporto)],
+      ["Totale complessivo", formatEuro(totaliPdf.totale)],
+    ],
+    theme: "plain",
+    styles: { fontSize: 8, cellPadding: { top: 1, right: 1, bottom: 1, left: 1 } },
+    columnStyles: {
+      0: { halign: "right", fontStyle: "bold", cellWidth: 42 },
+      1: { halign: "right", cellWidth: 30 },
+    },
+    margin: { left: 120, right: 8 },
+    didParseCell: (data) => {
+      if (data.row.index === 2) data.cell.styles.fontStyle = "bold";
+    },
+  });
+  y = doc.lastAutoTable.finalY + 8;
 
   [
     ["CONDIZIONI DI FORNITURA:", [`- Importi IVA esclusa. Aliquota IVA applicata: ${formatNumero(totaliPdf.ivaAliquota)}%`, "- Pagamento: da concordare.", "- Validita offerta: 15 giorni", "- Inizio lavori: da concordare."]],

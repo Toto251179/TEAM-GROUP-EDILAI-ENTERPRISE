@@ -137,6 +137,12 @@ function calcolaQuantitaRiga(riga) {
   const larghezza = numeroPreventivo(riga.larghezza);
   const altezzaPeso = numeroPreventivo(riga.altezzaPeso ?? riga.altezza_peso);
   const quantitaEsplicita = numeroPreventivo(riga.quantita ?? riga.quantity ?? riga.qty ?? riga.qta);
+  const unita = String(riga.unita ?? riga.unitaMisura ?? riga.um ?? "").trim().toLowerCase();
+
+  if (unita.includes("corpo") || unita === "cad" || unita === "pz") {
+    return quantitaEsplicita > 0 ? Number(quantitaEsplicita.toFixed(2)) : 1;
+  }
+
   const haDimensioniReali = lunghezza > 0 || larghezza > 0 || altezzaPeso > 0 || partiUguali > 1;
 
   const prodottoMisure = () => Number(
@@ -149,9 +155,6 @@ function calcolaQuantitaRiga(riga) {
   if (haDimensioniReali) return prodottoMisure();
   if (quantitaEsplicita > 0) return Number(quantitaEsplicita.toFixed(2));
   if ([partiUguali, lunghezza, larghezza, altezzaPeso].some((valore) => valore > 0)) return prodottoMisure();
-
-  const unita = String(riga.unita ?? riga.unitaMisura ?? riga.um ?? "").trim().toLowerCase();
-  if (unita.includes("corpo") || unita === "cad" || unita === "pz") return 1;
 
   return 0;
 }
@@ -219,7 +222,7 @@ function getQuantitaPdfRiga(riga) {
 }
 
 function getImportoPdfRiga(riga) {
-  const totaleEsplicito = numeroPreventivo(riga.totaleRiga ?? riga.importo ?? riga.totale);
+  const totaleEsplicito = numeroPreventivo(riga.importo ?? riga.totaleRiga ?? riga.totale);
   if (totaleEsplicito > 0) return Number(totaleEsplicito.toFixed(2));
 
   const quantita = getQuantitaPdfRiga(riga);
@@ -239,6 +242,7 @@ function calcolaTotaliPdf(righe = [], ivaAliquota = IVA_DEFAULT) {
 }
 
 function normalizzaIvaAliquota(ivaAliquota) {
+  if (ivaAliquota === "" || ivaAliquota === null || ivaAliquota === undefined) return IVA_DEFAULT;
   const valore = Number(String(ivaAliquota ?? "").replace(",", "."));
   return Number.isFinite(valore) && valore >= 0 ? valore : IVA_DEFAULT;
 }
@@ -1289,7 +1293,26 @@ function Preventivi() {
     });
     doc.setFont(undefined, "normal");
 
-    y = totaleY + totaleHeight + 10;
+    y = totaleY + totaleHeight + 5;
+    autoTable(doc, {
+      startY: y,
+      body: [
+        ["Imponibile", formatEuro(totaliPdf.imponibile)],
+        [`IVA ${formatNumero(totaliPdf.ivaAliquota)}%`, formatEuro(totaliPdf.iva)],
+        ["Totale complessivo", formatEuro(totaliPdf.totale)],
+      ],
+      theme: "plain",
+      styles: { fontSize: 8, cellPadding: { top: 1, right: 1, bottom: 1, left: 1 } },
+      columnStyles: {
+        0: { halign: "right", fontStyle: "bold", cellWidth: 42 },
+        1: { halign: "right", cellWidth: 30 },
+      },
+      margin: { left: 120, right: 8 },
+      didParseCell: (data) => {
+        if (data.row.index === 2) data.cell.styles.fontStyle = "bold";
+      },
+    });
+    y = doc.lastAutoTable.finalY + 8;
     if (y > 235) {
       doc.addPage();
       y = 20;
@@ -2106,6 +2129,4 @@ function Preventivi() {
 }
 
 export default Preventivi;
-
-
 

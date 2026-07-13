@@ -6,10 +6,10 @@ import autoTable from "jspdf-autotable";
 import {
   calcolaImportoRiga,
   calcolaQuantitaRiga,
+  calcolaTotaliPreventivo,
   deduplicaRighePdf,
   getPrezzoUnitarioRiga,
   getUnitaRiga,
-  normalizzaIvaAliquota,
   numeroPreventivo,
 } from "../server/utils/preventivoCalcoli.js";
 
@@ -137,10 +137,7 @@ function disegnaRiquadroClienteCode(doc, clienteCode) {
 }
 
 function calcolaTotali(righe = [], ivaAliquota = 22) {
-  const imponibile = Number(righe.reduce((totale, riga) => totale + calcolaImportoRiga(riga), 0).toFixed(2));
-  const aliquota = normalizzaIvaAliquota(ivaAliquota, 22);
-  const iva = Number((imponibile * (aliquota / 100)).toFixed(2));
-  return { imponibile, ivaAliquota: aliquota, totale: Number((imponibile + iva).toFixed(2)) };
+  return calcolaTotaliPreventivo(righe, ivaAliquota);
 }
 
 function formatMisuraPdf(riga, campo) {
@@ -328,7 +325,26 @@ async function generaPdf(preventivo, clientiArchivio = []) {
   doc.text("TOTALE", totaleImportoX - 7, totaleY + 3.7, { align: "right" });
   doc.text(formatEuro(totaliPdf.imponibile), totaleX + totaleWidth - 1.2, totaleY + 3.7, { align: "right" });
 
-  y = totaleY + totaleHeight + 10;
+  y = totaleY + totaleHeight + 5;
+  autoTable(doc, {
+    startY: y,
+    body: [
+      ["Imponibile", formatEuro(totaliPdf.imponibile)],
+      [`IVA ${formatNumero(totaliPdf.ivaAliquota)}%`, formatEuro(totaliPdf.ivaImporto)],
+      ["Totale complessivo", formatEuro(totaliPdf.totale)],
+    ],
+    theme: "plain",
+    styles: { fontSize: 8, cellPadding: { top: 1, right: 1, bottom: 1, left: 1 } },
+    columnStyles: {
+      0: { halign: "right", fontStyle: "bold", cellWidth: 42 },
+      1: { halign: "right", cellWidth: 30 },
+    },
+    margin: { left: 120, right: 8 },
+    didParseCell: (data) => {
+      if (data.row.index === 2) data.cell.styles.fontStyle = "bold";
+    },
+  });
+  y = doc.lastAutoTable.finalY + 8;
   if (y > 235) {
     doc.addPage();
     y = 20;

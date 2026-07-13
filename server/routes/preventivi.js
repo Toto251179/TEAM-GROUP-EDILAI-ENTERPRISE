@@ -1,5 +1,4 @@
 import { Router } from "express";
-import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -9,20 +8,24 @@ import { createCrudRepository } from "../utils/crud.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { archiviaPdfPreventivo, assicuraCartellaPreventiviCliente, trovaPdfPreventivoArchiviato } from "../utils/preventivoPdf.js";
 import {
+  calcolaImportoLordoRiga,
   calcolaImportoRiga,
   calcolaQuantitaRiga,
+  calcolaTotaliPreventivo,
   getPrezzoUnitarioRiga,
   getScontoRiga,
+  normalizzaIvaAliquota,
   numeroPreventivo,
 } from "../utils/preventivoCalcoli.js";
 
 const repository = createCrudRepository({
   table: "preventivi",
-  allowedFields: ["clienteId", "idIndirizzo", "clienteNome", "clienteVia", "clienteCode", "numero", "data", "cliente", "cantiere", "descrizione", "importo", "stato", "pdfPath", "folderPath", "pdfFileName"],
+  allowedFields: ["clienteId", "idIndirizzo", "clienteNome", "clienteVia", "clienteCode", "numero", "data", "cliente", "cantiere", "descrizione", "importo", "imponibile", "ivaPercentuale", "ivaImporto", "totale", "stato", "pdfPath", "folderPath", "pdfFileName"],
 });
 
 const router = Router();
 let preventivoRigheSchemaPromise;
+let preventivoTotaliSchemaPromise;
 
 function toCamel(row) {
   return Object.fromEntries(
@@ -36,6 +39,8 @@ function toCamel(row) {
 async function ensurePreventivoRigheSchema() {
   if (!preventivoRigheSchemaPromise) {
     preventivoRigheSchemaPromise = (async () => {
+      await query("ALTER TABLE preventivo_righe ADD COLUMN IF NOT EXISTS importo_lordo NUMERIC(12, 2) NOT NULL DEFAULT 0");
+      await query("ALTER TABLE preventivo_righe ADD COLUMN IF NOT EXISTS importo NUMERIC(12, 2) NOT NULL DEFAULT 0");
       const colonne = await query(
         `SELECT column_name
          FROM information_schema.columns
@@ -52,6 +57,19 @@ async function ensurePreventivoRigheSchema() {
   }
 
   return preventivoRigheSchemaPromise;
+}
+
+async function ensurePreventivoTotaliSchema() {
+  if (!preventivoTotaliSchemaPromise) {
+    preventivoTotaliSchemaPromise = (async () => {
+      await query("ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS imponibile NUMERIC(12, 2) NOT NULL DEFAULT 0");
+      await query("ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS iva_percentuale NUMERIC(5, 2) NOT NULL DEFAULT 22");
+      await query("ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS iva_importo NUMERIC(12, 2) NOT NULL DEFAULT 0");
+      await query("ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS totale NUMERIC(12, 2) NOT NULL DEFAULT 0");
+    })();
+  }
+
+  return preventivoTotaliSchemaPromise;
 }
 
 async function tableExists(tableName) {
@@ -139,6 +157,7 @@ function normalizzaPreventivo(row) {
 }
 
 async function getPreventiviBase(where = "", params = []) {
+  await ensurePreventivoTotaliSchema();
   const hasIndirizzi = await tableExists("indirizzi");
   const selectIndirizzo = hasIndirizzi
     ? `COALESCE(i_preventivo.id, i_cliente.id) AS indirizzo_recuperato_id,
@@ -176,11 +195,6 @@ async function getPreventiviBase(where = "", params = []) {
   );
 
   return result.rows.map(normalizzaPreventivo);
-}
-
-function normalizzaIvaAliquota(ivaAliquota) {
-  const valore = Number(String(ivaAliquota ?? "").replace(",", "."));
-  return Number.isFinite(valore) && valore >= 0 ? valore : 22;
 }
 
 async function getClienteAnagrafica(clienteId) {
@@ -261,13 +275,22 @@ async function normalizzaPayloadClientePreventivo(data, { clienteObbligatorio = 
 }
 
 async function salvaIvaAliquota(preventivoId, ivaAliquota) {
+  await ensurePreventivoTotaliSchema();
   await ensureIvaTable();
+  const aliquota = normalizzaIvaAliquota(ivaAliquota);
   await query(
     `INSERT INTO preventivi_iva (preventivo_id, iva_aliquota)
      VALUES ($1, $2)
      ON CONFLICT (preventivo_id)
      DO UPDATE SET iva_aliquota = EXCLUDED.iva_aliquota, updated_at = NOW()`,
-    [preventivoId, normalizzaIvaAliquota(ivaAliquota)],
+    [preventivoId, aliquota],
+  );
+  await query(
+    `UPDATE preventivi
+     SET iva_percentuale = $2,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [preventivoId, aliquota],
   );
 }
 
@@ -319,13 +342,18 @@ async function getRighe(preventivoId) {
     const quantitaCalcolata = calcolaQuantitaRiga(riga);
     const prezzoUnitario = getPrezzoUnitarioRiga(riga);
     const sconto = getScontoRiga(riga);
+    const rigaCalcolata = { ...riga, quantita: quantitaCalcolata, prezzoUnitario, sconto };
+    const importoLordo = calcolaImportoLordoRiga(rigaCalcolata);
+    const importo = calcolaImportoRiga(rigaCalcolata);
 
     return {
       ...riga,
       quantita: quantitaCalcolata,
       prezzoUnitario,
       sconto,
-      totale: calcolaImportoRiga({ ...riga, quantita: quantitaCalcolata, prezzoUnitario, sconto }),
+      importoLordo,
+      importo,
+      totale: importo,
     };
   });
 }
@@ -334,10 +362,15 @@ async function getPreventivoCompleto(id) {
   const preventivo = (await getPreventiviBase("WHERE p.id = $1", [id]))[0];
   if (!preventivo) return null;
   const ivaAliquote = await getIvaAliquote([preventivo.id]);
+  const ivaAliquota = ivaAliquote.get(Number(preventivo.id)) ??
+    preventivo.ivaPercentuale ??
+    preventivo.ivaAliquota ??
+    22;
 
   return {
     ...preventivo,
-    ivaAliquota: ivaAliquote.get(Number(preventivo.id)) ?? 22,
+    ivaAliquota,
+    ivaPercentuale: ivaAliquota,
     righe: await getRighe(id),
   };
 }
@@ -466,7 +499,9 @@ async function salvaRighe(preventivoId, righe = []) {
     const quantita = calcolaQuantitaRiga({ ...riga, partiUguali, lunghezza, larghezza, altezzaPeso });
     const prezzoUnitario = getPrezzoUnitarioRiga(riga);
     const sconto = getScontoRiga(riga);
-    const totale = calcolaImportoRiga({ ...riga, partiUguali, lunghezza, larghezza, altezzaPeso, quantita, prezzoUnitario, sconto });
+    const rigaCalcolata = { ...riga, partiUguali, lunghezza, larghezza, altezzaPeso, quantita, prezzoUnitario, sconto };
+    const importoLordo = calcolaImportoLordoRiga(rigaCalcolata);
+    const totale = calcolaImportoRiga(rigaCalcolata);
     const valoriBase = [
       preventivoId,
       riga.elencoPrezziId || null,
@@ -480,14 +515,16 @@ async function salvaRighe(preventivoId, righe = []) {
       quantita,
       prezzoUnitario,
       sconto,
+      importoLordo,
+      totale,
       totale,
     ];
 
     if (supportoSchema.categoria && supportoSchema.categoriaBloccata) {
       const inserita = await query(
         `INSERT INTO preventivo_righe
-         (preventivo_id, elenco_prezzi_id, codice, categoria, descrizione, unita, parti_uguali, lunghezza, larghezza, altezza_peso, quantita, prezzo_unitario, sconto, totale, categoria_bloccata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         (preventivo_id, elenco_prezzi_id, codice, categoria, descrizione, unita, parti_uguali, lunghezza, larghezza, altezza_peso, quantita, prezzo_unitario, sconto, importo_lordo, importo, totale, categoria_bloccata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
          RETURNING id`,
         [
           preventivoId,
@@ -503,6 +540,8 @@ async function salvaRighe(preventivoId, righe = []) {
           quantita,
           prezzoUnitario,
           sconto,
+          importoLordo,
+          totale,
           totale,
           riga.categoriaBloccata !== false,
         ],
@@ -519,8 +558,8 @@ async function salvaRighe(preventivoId, righe = []) {
     } else if (supportoSchema.categoria) {
       const inserita = await query(
         `INSERT INTO preventivo_righe
-         (preventivo_id, elenco_prezzi_id, codice, categoria, descrizione, unita, parti_uguali, lunghezza, larghezza, altezza_peso, quantita, prezzo_unitario, sconto, totale)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         (preventivo_id, elenco_prezzi_id, codice, categoria, descrizione, unita, parti_uguali, lunghezza, larghezza, altezza_peso, quantita, prezzo_unitario, sconto, importo_lordo, importo, totale)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          RETURNING id`,
         [
           preventivoId,
@@ -536,6 +575,8 @@ async function salvaRighe(preventivoId, righe = []) {
           quantita,
           prezzoUnitario,
           sconto,
+          importoLordo,
+          totale,
           totale,
         ],
       );
@@ -551,8 +592,8 @@ async function salvaRighe(preventivoId, righe = []) {
     } else {
       const inserita = await query(
         `INSERT INTO preventivo_righe
-         (preventivo_id, elenco_prezzi_id, codice, descrizione, unita, parti_uguali, lunghezza, larghezza, altezza_peso, quantita, prezzo_unitario, sconto, totale)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         (preventivo_id, elenco_prezzi_id, codice, descrizione, unita, parti_uguali, lunghezza, larghezza, altezza_peso, quantita, prezzo_unitario, sconto, importo_lordo, importo, totale)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          RETURNING id`,
         valoriBase,
       );
@@ -590,35 +631,41 @@ router.get("/:id", asyncHandler(async (req, res) => {
 }));
 
 router.post("/", asyncHandler(async (req, res) => {
+  await ensurePreventivoTotaliSchema();
   const righe = Array.isArray(req.body.righe) ? req.body.righe : [];
   const payload = await normalizzaPayloadClientePreventivo(req.body, { clienteObbligatorio: true });
-  const importo = righe.length
-    ? righe.reduce((totale, riga) => totale + calcolaImportoRiga(riga), 0)
-    : Number(req.body.importo || 0);
+  const totali = calcolaTotaliPreventivo(righe, req.body.ivaAliquota ?? req.body.ivaPercentuale);
 
   const preventivo = await repository.create({
     ...payload,
     ivaAliquota: undefined,
-    importo: Number(importo.toFixed(2)),
+    importo: totali.imponibile,
+    imponibile: totali.imponibile,
+    ivaPercentuale: totali.ivaPercentuale,
+    ivaImporto: totali.ivaImporto,
+    totale: totali.totale,
   });
 
-  await salvaIvaAliquota(preventivo.id, req.body.ivaAliquota);
+  await salvaIvaAliquota(preventivo.id, totali.ivaPercentuale);
   await salvaRighe(preventivo.id, righe);
   res.status(201).json(await getPreventivoCompleto(preventivo.id));
 }));
 
 router.put("/:id", asyncHandler(async (req, res) => {
+  await ensurePreventivoTotaliSchema();
   const righe = Array.isArray(req.body.righe) ? req.body.righe : null;
   const payload = await normalizzaPayloadClientePreventivo(req.body);
-  const ivaAliquota = payload.ivaAliquota;
+  const ivaAliquota = payload.ivaAliquota ?? payload.ivaPercentuale;
   delete payload.ivaAliquota;
+  delete payload.ivaPercentuale;
 
   if (righe) {
-    payload.importo = Number(
-      righe
-        .reduce((totale, riga) => totale + calcolaImportoRiga(riga), 0)
-        .toFixed(2),
-    );
+    const totali = calcolaTotaliPreventivo(righe, ivaAliquota);
+    payload.importo = totali.imponibile;
+    payload.imponibile = totali.imponibile;
+    payload.ivaPercentuale = totali.ivaPercentuale;
+    payload.ivaImporto = totali.ivaImporto;
+    payload.totale = totali.totale;
   }
 
   const preventivo = await repository.update(req.params.id, payload);
@@ -644,8 +691,6 @@ router.get("/:id/pdf", asyncHandler(async (req, res) => {
   const archivio = await trovaPdfPreventivoArchiviato(preventivo, cliente ? [cliente] : undefined);
   const endpoint = `/api/preventivi/${req.params.id}/pdf`;
   const pdfPath = archivio.filePath;
-  console.log("pdfPath", pdfPath);
-  console.log("fs.existsSync(pdfPath)", fsSync.existsSync(pdfPath));
   if (!archivio.exists) {
     console.warn("PDF preventivo non trovato", {
       status: 404,
@@ -699,8 +744,6 @@ router.head("/:id/pdf", asyncHandler(async (req, res) => {
   const cliente = await getClienteCompleto(preventivo.clienteId);
   const archivio = await trovaPdfPreventivoArchiviato(preventivo, cliente ? [cliente] : undefined);
   const pdfPath = archivio.filePath;
-  console.log("pdfPath", pdfPath);
-  console.log("fs.existsSync(pdfPath)", fsSync.existsSync(pdfPath));
   if (!archivio.exists) return res.status(404).end();
 
   const stat = await fs.stat(pdfPath);
@@ -722,8 +765,6 @@ router.get("/:id/pdf-info", asyncHandler(async (req, res) => {
   const cliente = await getClienteCompleto(preventivo.clienteId);
   const archivio = await trovaPdfPreventivoArchiviato(preventivo, cliente ? [cliente] : undefined);
   const pdfPath = archivio.filePath;
-  console.log("pdfPath", pdfPath);
-  console.log("fs.existsSync(pdfPath)", fsSync.existsSync(pdfPath));
 
   res.json({
     exists: archivio.exists,
@@ -744,8 +785,6 @@ router.post("/:id/pdf", asyncHandler(async (req, res) => {
     archivio = await archiviaPdfPreventivo(preventivo, cliente ? [cliente] : undefined);
     await salvaArchivioPreventivo(req.params.id, archivio);
     const pdfPath = archivio.filePath;
-    console.log("pdfPath", pdfPath);
-    console.log("fs.existsSync(pdfPath)", fsSync.existsSync(pdfPath));
     const stat = await fs.stat(pdfPath);
     console.info("PDF preventivo generato", {
       status: 200,
@@ -790,8 +829,6 @@ router.get("/:id/cartella", asyncHandler(async (req, res) => {
 
   const cliente = await getClienteCompleto(preventivo.clienteId);
   const archivio = await assicuraCartellaPreventiviCliente(preventivo, cliente ? [cliente] : undefined);
-  console.log("folderPath", archivio.folderPath);
-  console.log("fs.existsSync(folderPath)", fsSync.existsSync(archivio.folderPath));
   res.json({
     message: "Cartella preventivi cliente disponibile.",
     folderPath: archivio.folderPath,
@@ -839,8 +876,6 @@ router.post("/:id/apri-cartella", asyncHandler(async (req, res) => {
   const cliente = await getClienteCompleto(preventivo.clienteId);
   const archivio = await assicuraCartellaPreventiviCliente(preventivo, cliente ? [cliente] : undefined);
   const folderPath = archivio.folderPath;
-  console.log("folderPath", folderPath);
-  console.log("fs.existsSync(folderPath)", fsSync.existsSync(folderPath));
   res.json({ message: "Cartella preventivo disponibile.", folderPath });
 }));
 
@@ -851,8 +886,6 @@ router.post("/:id/copia-percorso", asyncHandler(async (req, res) => {
   const cliente = await getClienteCompleto(preventivo.clienteId);
   const archivio = await assicuraCartellaPreventiviCliente(preventivo, cliente ? [cliente] : undefined);
   const folderPath = archivio.folderPath;
-  console.log("folderPath", folderPath);
-  console.log("fs.existsSync(folderPath)", fsSync.existsSync(folderPath));
 
   try {
     const clip = spawn("clip.exe", [], { stdio: ["pipe", "ignore", "pipe"] });
@@ -878,8 +911,6 @@ router.post("/:id/apri-pdf", asyncHandler(async (req, res) => {
   const cliente = await getClienteCompleto(preventivo.clienteId);
   const archivio = await trovaPdfPreventivoArchiviato(preventivo, cliente ? [cliente] : undefined);
   const pdfPath = archivio.filePath;
-  console.log("pdfPath", pdfPath);
-  console.log("fs.existsSync(pdfPath)", fsSync.existsSync(pdfPath));
   if (!archivio.exists) {
     return res.status(404).json({
       code: "PDF_NON_GENERATO",
