@@ -42,6 +42,20 @@ function backendUrl(pathOrUrl) {
   return `${API_BASE_URL}${pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`}`;
 }
 
+function apriFinestraPdfAttesa(preventivo) {
+  const pdfWindow = window.open("", "_blank");
+  if (pdfWindow) {
+    pdfWindow.document.title = "Apertura PDF";
+    pdfWindow.document.body.innerHTML = `
+      <div style="font-family: Arial, sans-serif; padding: 24px;">
+        <h1 style="font-size: 18px;">Apertura PDF in corso...</h1>
+        <p>Preventivo ${String(preventivo?.numero || preventivo?.id || "").replace(/[<>&]/g, "")}</p>
+      </div>
+    `;
+  }
+  return pdfWindow;
+}
+
 const preventivoVuoto = {
   id: null,
   numero: "",
@@ -815,55 +829,88 @@ function Preventivi() {
     }
   };
 
-  const apriPdfDaUrl = async (pdfUrl, nuovaScheda) => {
+  const apriPdfDaUrl = async (pdfUrl, nuovaScheda, preventivo) => {
     const endpoint = backendUrl(pdfUrl);
+    console.info("Apertura PDF preventivo", {
+      endpoint,
+      id: preventivo?.id,
+      numero: preventivo?.numero,
+      revisione: preventivo?.revisione,
+    });
     const response = await fetch(endpoint);
     const contentType = response.headers.get("content-type") || "";
+    console.info("Risposta PDF preventivo", {
+      endpoint,
+      status: response.status,
+      contentType,
+      id: preventivo?.id,
+      numero: preventivo?.numero,
+      revisione: preventivo?.revisione,
+    });
 
     if (!response.ok) {
-      let detail = null;
+      let detail = "";
       try {
-        detail = contentType.includes("application/json") ? await response.json() : null;
+        detail = contentType.includes("application/json")
+          ? JSON.stringify(await response.json())
+          : await response.text();
       } catch {
-        detail = null;
+        detail = "";
       }
       const message = response.status === 404
-        ? "PDF non ancora generato"
-        : detail?.message || `Errore apertura PDF - HTTP ${response.status}`;
+        ? "PDF non trovato"
+        : `Errore PDF HTTP ${response.status}${detail ? ` - ${detail.slice(0, 300)}` : ""}`;
       console.error("Errore apertura PDF", { status: response.status, endpoint, detail });
       throw new Error(message);
     }
 
     if (!contentType.includes("application/pdf")) {
-      console.error("Risposta PDF non valida", { status: response.status, endpoint, contentType });
-      throw new Error("Errore apertura PDF");
+      const text = await response.text();
+      console.error("Risposta PDF non valida", { status: response.status, endpoint, contentType, detail: text.slice(0, 300) });
+      throw new Error(`Risposta non PDF: ${contentType}. Dettaglio: ${text.slice(0, 300)}`);
     }
 
     const blob = await response.blob();
     if (!blob.size) {
       console.error("File PDF vuoto", { status: response.status, endpoint, contentType });
-      throw new Error("File PDF non trovato");
+      throw new Error("Il PDF restituito è vuoto.");
     }
+    console.info("Blob PDF preventivo", {
+      endpoint,
+      status: response.status,
+      contentType,
+      size: blob.size,
+      id: preventivo?.id,
+      numero: preventivo?.numero,
+      revisione: preventivo?.revisione,
+    });
 
     const objectUrl = URL.createObjectURL(blob);
     if (nuovaScheda && !nuovaScheda.closed) {
       nuovaScheda.location.href = objectUrl;
     } else {
-      window.open(objectUrl, "_blank", "noopener,noreferrer");
+      window.open(objectUrl, "_blank");
     }
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
     return { contentType, size: blob.size };
   };
 
   const apriPdfPreventivo = async (preventivo) => {
     setErrore("");
     setMessaggio("");
-    const nuovaScheda = window.open("", "_blank", "noopener,noreferrer");
+    const nuovaScheda = apriFinestraPdfAttesa(preventivo);
 
     try {
-      await apriPdfDaUrl(`/api/preventivi/${preventivo.id}/pdf`, nuovaScheda);
+      await apriPdfDaUrl(`/api/preventivi/${preventivo.id}/pdf`, nuovaScheda, preventivo);
       setMessaggio("PDF aperto");
     } catch (error) {
       if (nuovaScheda && !nuovaScheda.closed) nuovaScheda.close();
+      console.error("Errore apertura PDF preventivo", {
+        id: preventivo?.id,
+        numero: preventivo?.numero,
+        revisione: preventivo?.revisione,
+        message: error.message,
+      });
       setErrore(error.message);
     }
   };
@@ -1043,14 +1090,14 @@ function Preventivi() {
     setErrore("");
     setMessaggio("");
     setArchivioInCorso(String(preventivo.id));
-    const nuovaScheda = window.open("", "_blank", "noopener,noreferrer");
+    const nuovaScheda = apriFinestraPdfAttesa(preventivo);
 
     try {
       const risposta = await api.post(`/preventivi/${preventivo.id}/pdf`, {});
       if (!risposta?.success || !risposta?.pdfUrl) {
         throw new Error("Errore generazione PDF");
       }
-      await apriPdfDaUrl(risposta.pdfUrl, nuovaScheda);
+      await apriPdfDaUrl(risposta.pdfUrl, nuovaScheda, preventivo);
       setMessaggio("PDF generato e aperto");
       await aggiornaVistaDaDatabase();
     } catch (error) {
