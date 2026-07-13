@@ -16,7 +16,7 @@ import {
 } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { azienda } from "../config/azienda";
-import { api } from "../services/api";
+import { API_BASE_URL, api } from "../services/api";
 import { disegnaIntestazioneAzienda } from "../utils/pdfAzienda";
 
 const STATI = ["Bozza", "Inviato", "Accettato", "Rifiutato", "Annullato"];
@@ -34,6 +34,13 @@ const CATEGORIE_COMPUTO = [
   "Demolizioni",
   "Scavi",
 ];
+
+function backendUrl(pathOrUrl) {
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  const origin = API_BASE_URL.replace(/\/api\/?$/i, "");
+  if (pathOrUrl.startsWith("/api/")) return `${origin}${pathOrUrl}`;
+  return `${API_BASE_URL}${pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`}`;
+}
 
 const preventivoVuoto = {
   id: null,
@@ -808,13 +815,55 @@ function Preventivi() {
     }
   };
 
+  const apriPdfDaUrl = async (pdfUrl, nuovaScheda) => {
+    const endpoint = backendUrl(pdfUrl);
+    const response = await fetch(endpoint);
+    const contentType = response.headers.get("content-type") || "";
+
+    if (!response.ok) {
+      let detail = null;
+      try {
+        detail = contentType.includes("application/json") ? await response.json() : null;
+      } catch {
+        detail = null;
+      }
+      const message = response.status === 404
+        ? "PDF non ancora generato"
+        : detail?.message || `Errore apertura PDF - HTTP ${response.status}`;
+      console.error("Errore apertura PDF", { status: response.status, endpoint, detail });
+      throw new Error(message);
+    }
+
+    if (!contentType.includes("application/pdf")) {
+      console.error("Risposta PDF non valida", { status: response.status, endpoint, contentType });
+      throw new Error("Errore apertura PDF");
+    }
+
+    const blob = await response.blob();
+    if (!blob.size) {
+      console.error("File PDF vuoto", { status: response.status, endpoint, contentType });
+      throw new Error("File PDF non trovato");
+    }
+
+    const objectUrl = URL.createObjectURL(blob);
+    if (nuovaScheda && !nuovaScheda.closed) {
+      nuovaScheda.location.href = objectUrl;
+    } else {
+      window.open(objectUrl, "_blank", "noopener,noreferrer");
+    }
+    return { contentType, size: blob.size };
+  };
+
   const apriPdfPreventivo = async (preventivo) => {
     setErrore("");
     setMessaggio("");
+    const nuovaScheda = window.open("", "_blank", "noopener,noreferrer");
 
     try {
-      await api.post(`/preventivi/${preventivo.id}/apri-pdf`, {});
+      await apriPdfDaUrl(`/api/preventivi/${preventivo.id}/pdf`, nuovaScheda);
+      setMessaggio("PDF aperto");
     } catch (error) {
+      if (nuovaScheda && !nuovaScheda.closed) nuovaScheda.close();
       setErrore(error.message);
     }
   };
@@ -991,7 +1040,30 @@ function Preventivi() {
   };
 
   const generaPDF = async (preventivo) => {
-    await archiviaPreventivoPdf(preventivo);
+    setErrore("");
+    setMessaggio("");
+    setArchivioInCorso(String(preventivo.id));
+    const nuovaScheda = window.open("", "_blank", "noopener,noreferrer");
+
+    try {
+      const risposta = await api.post(`/preventivi/${preventivo.id}/pdf`, {});
+      if (!risposta?.success || !risposta?.pdfUrl) {
+        throw new Error("Errore generazione PDF");
+      }
+      await apriPdfDaUrl(risposta.pdfUrl, nuovaScheda);
+      setMessaggio("PDF generato e aperto");
+      await aggiornaVistaDaDatabase();
+    } catch (error) {
+      if (nuovaScheda && !nuovaScheda.closed) nuovaScheda.close();
+      console.error("Errore generazione PDF", {
+        status: error.status,
+        endpoint: `/api/preventivi/${preventivo.id}/pdf`,
+        error: error.message,
+      });
+      setErrore(error.message || "Errore generazione PDF");
+    } finally {
+      setArchivioInCorso("");
+    }
     return;
 
     const doc = new jsPDF();

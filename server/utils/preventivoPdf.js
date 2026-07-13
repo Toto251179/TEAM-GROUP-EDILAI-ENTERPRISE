@@ -390,3 +390,35 @@ export async function archiviaPdfPreventivo(preventivo, clientiArchivio = [], ou
     folderPath,
   };
 }
+
+export async function trovaPdfPreventivoArchiviato(preventivo, clientiArchivio = [], outputDir = env.preventivi.outputDir) {
+  const rootOutputDir = await resolvePreventiviOutputDir(outputDir);
+  const { base, revisione } = parseNumeroRevisione(preventivo.numero);
+  const clienteNome = getClienteNome(preventivo, clientiArchivio) || "CLIENTE";
+  const clienteCode = getClienteCode(preventivo, clientiArchivio) || "SENZA-ID";
+  const clientiRoot = path.join(rootOutputDir, "CLIENTI");
+  const clienteFolderName =
+    await findDirectoryByPrefix(clientiRoot, `${safeFileName(clienteCode)} - `) ||
+    safeFileName(`${clienteCode} - ${clienteNome}`);
+  const clienteFolderPath = path.join(clientiRoot, clienteFolderName);
+  const preventiviRoot = path.join(clienteFolderPath, "PREVENTIVI");
+  const oggetto = getOggettoPreventivo(preventivo);
+  const folderName =
+    await findDirectoryByPrefix(preventiviRoot, `${base} - `) ||
+    safeFileName(`${base} - ${oggetto}`);
+  const folderPath = path.join(preventiviRoot, folderName);
+  const fileName = `${safeFileName(`${base}-${revisione}`)}.pdf`;
+  const filePath = path.join(folderPath, fileName);
+
+  return {
+    fileName,
+    filePath,
+    rootPath: rootOutputDir,
+    clientiRoot,
+    clienteFolderName,
+    clienteFolderPath,
+    folderName,
+    folderPath,
+    exists: await pathExists(filePath),
+  };
+}

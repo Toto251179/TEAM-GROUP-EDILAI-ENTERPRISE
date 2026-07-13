@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { query } from "../config/db.js";
 import { createCrudRepository } from "../utils/crud.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { archiviaPdfPreventivo } from "../utils/preventivoPdf.js";
+import { archiviaPdfPreventivo, trovaPdfPreventivoArchiviato } from "../utils/preventivoPdf.js";
 
 const repository = createCrudRepository({
   table: "preventivi",
@@ -611,6 +611,128 @@ router.delete("/:id", asyncHandler(async (req, res) => {
   const item = await repository.remove(req.params.id);
   if (!item) return res.status(404).json({ message: "Preventivo non trovato" });
   res.json({ deleted: true, item });
+}));
+
+router.get("/:id/pdf", asyncHandler(async (req, res) => {
+  const preventivo = await getPreventivoCompleto(req.params.id);
+  if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
+
+  const cliente = await getClienteCompleto(preventivo.clienteId);
+  const archivio = await trovaPdfPreventivoArchiviato(preventivo, cliente ? [cliente] : undefined);
+  const endpoint = `/api/preventivi/${req.params.id}/pdf`;
+  if (!archivio.exists) {
+    console.warn("PDF preventivo non trovato", {
+      status: 404,
+      endpoint,
+      fileName: archivio.fileName,
+      filePath: archivio.filePath,
+    });
+    return res.status(404).json({
+      code: "PDF_NON_GENERATO",
+      message: "PDF non ancora generato",
+      filename: archivio.fileName,
+    });
+  }
+
+  const stat = await fs.stat(archivio.filePath);
+  if (!stat.isFile() || stat.size <= 0) {
+    console.warn("File PDF preventivo non valido", {
+      status: 404,
+      endpoint,
+      fileName: archivio.fileName,
+      filePath: archivio.filePath,
+      size: stat.size,
+    });
+    return res.status(404).json({
+      code: "PDF_NON_VALIDO",
+      message: "File PDF non trovato",
+      filename: archivio.fileName,
+    });
+  }
+
+  console.info("PDF preventivo servito", {
+    status: 200,
+    endpoint,
+    fileName: archivio.fileName,
+    filePath: archivio.filePath,
+    size: stat.size,
+  });
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="${archivio.fileName.replaceAll('"', "")}"`);
+  res.setHeader("Content-Length", String(stat.size));
+  res.send(await fs.readFile(archivio.filePath));
+}));
+
+router.post("/:id/pdf", asyncHandler(async (req, res) => {
+  const preventivo = await getPreventivoCompleto(req.params.id);
+  if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
+
+  const cliente = await getClienteCompleto(preventivo.clienteId);
+  let archivio;
+  const endpoint = `/api/preventivi/${req.params.id}/pdf`;
+  try {
+    archivio = await archiviaPdfPreventivo(preventivo, cliente ? [cliente] : undefined);
+    const stat = await fs.stat(archivio.filePath);
+    console.info("PDF preventivo generato", {
+      status: 200,
+      endpoint,
+      fileName: archivio.fileName,
+      filePath: archivio.filePath,
+      size: stat.size,
+    });
+    res.json({
+      success: true,
+      message: "PDF generato e aperto",
+      pdfUrl: endpoint,
+      filename: archivio.fileName,
+      size: stat.size,
+      archivio: {
+        fileName: archivio.fileName,
+        filePath: archivio.filePath,
+        folderPath: archivio.folderPath,
+      },
+    });
+  } catch (error) {
+    const pdfEsistente = await trovaPdfPreventivoArchiviato(preventivo, cliente ? [cliente] : undefined).catch(() => null);
+    if ((error.code === "EBUSY" || error.code === "EACCES") && pdfEsistente?.exists) {
+      const stat = await fs.stat(pdfEsistente.filePath);
+      if (stat.isFile() && stat.size > 0) {
+        console.warn("PDF preventivo esistente usato per file bloccato", {
+          status: 200,
+          endpoint,
+          fileName: pdfEsistente.fileName,
+          filePath: pdfEsistente.filePath,
+          size: stat.size,
+          error: error.message,
+        });
+        return res.json({
+          success: true,
+          message: "PDF generato e aperto",
+          pdfUrl: endpoint,
+          filename: pdfEsistente.fileName,
+          size: stat.size,
+          archivio: {
+            fileName: pdfEsistente.fileName,
+            filePath: pdfEsistente.filePath,
+            folderPath: pdfEsistente.folderPath,
+          },
+        });
+      }
+    }
+    console.error("Errore generazione PDF preventivo", {
+      status: 500,
+      endpoint,
+      fileName: archivio?.fileName,
+      filePath: archivio?.filePath,
+      error: error.message,
+    });
+    return res.status(500).json({
+      code: "ERRORE_GENERAZIONE_PDF",
+      message: "Errore generazione PDF",
+      errore: error.message,
+      filename: archivio?.fileName,
+    });
+  }
 }));
 
 router.post("/:id/archivia-pdf", asyncHandler(async (req, res) => {
