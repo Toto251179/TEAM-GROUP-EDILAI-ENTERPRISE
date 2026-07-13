@@ -204,41 +204,45 @@ function getScontoRiga(riga) {
   return numeroPreventivo(riga.sconto);
 }
 
-function getQuantitaPdfRiga(riga) {
-  const quantitaCalcolata = calcolaQuantitaRiga(riga);
-  if (quantitaCalcolata > 0) return quantitaCalcolata;
-
-  const quantitaEsplicita = numeroPreventivo(riga.quantita);
-  if (quantitaEsplicita > 0) return quantitaEsplicita;
-
-  const unita = String(riga.unita || "").toLowerCase();
-  const totaleEsplicito = numeroPreventivo(riga.totaleRiga ?? riga.importo ?? riga.totale);
-  const prezzo = getPrezzoUnitarioRiga(riga);
-
-  if (prezzo > 0 && totaleEsplicito > 0) return Number((totaleEsplicito / prezzo).toFixed(2));
-  if (unita.includes("corpo")) return 1;
-
-  return 0;
+function hasValue(value) {
+  return value !== null && value !== undefined && value !== "";
 }
 
-function getImportoPdfRiga(riga) {
-  const totaleEsplicito = numeroPreventivo(riga.importo ?? riga.totaleRiga ?? riga.totale);
-  if (totaleEsplicito > 0) return Number(totaleEsplicito.toFixed(2));
+function getRigaPdfValori(riga = {}) {
+  const importo = hasValue(riga.importo) ? numeroPreventivo(riga.importo) : numeroPreventivo(riga.totale);
 
-  const quantita = getQuantitaPdfRiga(riga);
-  const prezzo = getPrezzoUnitarioRiga(riga);
-  const sconto = getScontoRiga(riga);
-
-  return Number((quantita * prezzo * (1 - sconto / 100)).toFixed(2));
+  return {
+    quantita: numeroPreventivo(riga.quantita),
+    prezzoUnitario: numeroPreventivo(riga.prezzoUnitario ?? riga.prezzo_unitario),
+    importoLordo: numeroPreventivo(riga.importoLordo ?? riga.importo_lordo),
+    importo,
+    totale: hasValue(riga.totale) ? numeroPreventivo(riga.totale) : importo,
+  };
 }
 
-function calcolaTotaliPdf(righe = [], ivaAliquota = IVA_DEFAULT) {
-  const imponibile = Number(righe.reduce((totale, riga) => totale + getImportoPdfRiga(riga), 0).toFixed(2));
-  const aliquota = normalizzaIvaAliquota(ivaAliquota);
-  const iva = Number((imponibile * (aliquota / 100)).toFixed(2));
-  const totale = Number((imponibile + iva).toFixed(2));
+function getTotaliPdf(preventivo = {}, righe = []) {
+  const lordo = hasValue(preventivo.lordo)
+    ? numeroPreventivo(preventivo.lordo)
+    : righe.reduce((somma, riga) => somma + getRigaPdfValori(riga).importoLordo, 0);
+  const imponibile = hasValue(preventivo.imponibile)
+    ? numeroPreventivo(preventivo.imponibile)
+    : hasValue(preventivo.importo)
+      ? numeroPreventivo(preventivo.importo)
+      : righe.reduce((somma, riga) => somma + getRigaPdfValori(riga).importo, 0);
+  const sconto = hasValue(preventivo.sconto)
+    ? numeroPreventivo(preventivo.sconto)
+    : Number((lordo - imponibile).toFixed(2));
+  const ivaAliquota = normalizzaIvaAliquota(preventivo.ivaPercentuale ?? preventivo.ivaAliquota ?? IVA_DEFAULT);
+  const iva = hasValue(preventivo.ivaImporto)
+    ? numeroPreventivo(preventivo.ivaImporto)
+    : hasValue(preventivo.iva_importo)
+      ? numeroPreventivo(preventivo.iva_importo)
+      : 0;
+  const totale = hasValue(preventivo.totale)
+    ? numeroPreventivo(preventivo.totale)
+    : Number((imponibile + iva).toFixed(2));
 
-  return { imponibile, iva, totale, ivaAliquota: aliquota };
+  return { lordo, sconto, imponibile, iva, ivaImporto: iva, totale, ivaAliquota };
 }
 
 function normalizzaIvaAliquota(ivaAliquota) {
@@ -1141,7 +1145,7 @@ function Preventivi() {
 
     const doc = new jsPDF();
     const righe = preventivo.righe || [];
-    const totaliPdf = calcolaTotaliPdf(righe, preventivo.ivaAliquota);
+    const totaliPdf = getTotaliPdf(preventivo, righe);
     let y = 18;
 
     await disegnaIntestazioneAzienda(doc, y);
@@ -1181,14 +1185,15 @@ function Preventivi() {
     const computoRows = [];
 
     righe.forEach((rigaPdf, index) => {
+      const valori = getRigaPdfValori(rigaPdf);
       const descrizione = rigaPdf.descrizione || "";
       const parti = formatMisuraPdf(rigaPdf, "partiUguali");
       const lunghezza = formatMisuraPdf(rigaPdf, "lunghezza");
       const larghezza = formatMisuraPdf(rigaPdf, "larghezza");
       const altezzaPeso = formatMisuraPdf(rigaPdf, "altezzaPeso");
-      const quantita = formatNumeroConDecimali(getQuantitaPdfRiga(rigaPdf));
-      const prezzo = formatEuro(getPrezzoUnitarioRiga(rigaPdf));
-      const importo = formatEuro(getImportoPdfRiga(rigaPdf));
+      const quantita = formatNumeroConDecimali(valori.quantita);
+      const prezzo = formatEuro(valori.prezzoUnitario);
+      const importo = formatEuro(valori.importo);
 
       computoRows.push(
         [
@@ -1297,6 +1302,8 @@ function Preventivi() {
     autoTable(doc, {
       startY: y,
       body: [
+        ["Lordo", formatEuro(totaliPdf.lordo)],
+        ["Sconto", formatEuro(totaliPdf.sconto)],
         ["Imponibile", formatEuro(totaliPdf.imponibile)],
         [`IVA ${formatNumero(totaliPdf.ivaAliquota)}%`, formatEuro(totaliPdf.iva)],
         ["Totale complessivo", formatEuro(totaliPdf.totale)],
@@ -1309,7 +1316,7 @@ function Preventivi() {
       },
       margin: { left: 120, right: 8 },
       didParseCell: (data) => {
-        if (data.row.index === 2) data.cell.styles.fontStyle = "bold";
+        if (data.row.index === 4) data.cell.styles.fontStyle = "bold";
       },
     });
     y = doc.lastAutoTable.finalY + 8;
@@ -2129,4 +2136,3 @@ function Preventivi() {
 }
 
 export default Preventivi;
-

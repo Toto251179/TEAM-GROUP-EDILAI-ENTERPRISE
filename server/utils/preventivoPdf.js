@@ -5,11 +5,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { env } from "../config/env.js";
 import {
-  calcolaImportoRiga,
-  calcolaQuantitaRiga,
-  calcolaTotaliPreventivo,
   deduplicaRighePdf,
-  getPrezzoUnitarioRiga,
   getUnitaRiga,
   numeroPreventivo,
 } from "./preventivoCalcoli.js";
@@ -196,8 +192,45 @@ function getOggettoPreventivo(preventivo) {
   return String(preventivo.descrizione || preventivo.oggetto || "Preventivo").trim();
 }
 
-function calcolaTotali(righe = [], ivaAliquota = 22) {
-  return calcolaTotaliPreventivo(righe, ivaAliquota);
+function hasValue(value) {
+  return value !== null && value !== undefined && value !== "";
+}
+
+function getRigaPdfValori(riga = {}) {
+  const importo = hasValue(riga.importo) ? numeroPreventivo(riga.importo) : numeroPreventivo(riga.totale);
+
+  return {
+    quantita: numeroPreventivo(riga.quantita),
+    prezzoUnitario: numeroPreventivo(riga.prezzoUnitario ?? riga.prezzo_unitario),
+    importoLordo: numeroPreventivo(riga.importoLordo ?? riga.importo_lordo),
+    importo,
+    totale: hasValue(riga.totale) ? numeroPreventivo(riga.totale) : importo,
+  };
+}
+
+function getTotaliPdf(preventivo = {}, righe = []) {
+  const lordo = hasValue(preventivo.lordo)
+    ? numeroPreventivo(preventivo.lordo)
+    : righe.reduce((somma, riga) => somma + getRigaPdfValori(riga).importoLordo, 0);
+  const imponibile = hasValue(preventivo.imponibile)
+    ? numeroPreventivo(preventivo.imponibile)
+    : hasValue(preventivo.importo)
+      ? numeroPreventivo(preventivo.importo)
+      : righe.reduce((somma, riga) => somma + getRigaPdfValori(riga).importo, 0);
+  const sconto = hasValue(preventivo.sconto)
+    ? numeroPreventivo(preventivo.sconto)
+    : Number((lordo - imponibile).toFixed(2));
+  const ivaAliquota = numeroPreventivo(preventivo.ivaPercentuale ?? preventivo.ivaAliquota ?? 22);
+  const ivaImporto = hasValue(preventivo.ivaImporto)
+    ? numeroPreventivo(preventivo.ivaImporto)
+    : hasValue(preventivo.iva_importo)
+      ? numeroPreventivo(preventivo.iva_importo)
+      : 0;
+  const totale = hasValue(preventivo.totale)
+    ? numeroPreventivo(preventivo.totale)
+    : Number((imponibile + ivaImporto).toFixed(2));
+
+  return { lordo, sconto, imponibile, ivaAliquota, ivaImporto, totale };
 }
 
 function formatMisuraPdf(riga, campo) {
@@ -243,7 +276,7 @@ function disegnaRiquadroClienteCode(doc, clienteCode) {
 export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []) {
   const doc = new jsPDF();
   const righe = deduplicaRighePdf(preventivo.righe || []);
-  const totaliPdf = calcolaTotali(righe, preventivo.ivaAliquota);
+  const totaliPdf = getTotaliPdf(preventivo, righe);
   let y = 18;
 
   await disegnaLogo(doc, y);
@@ -271,9 +304,10 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
 
   const computoRows = [];
   righe.forEach((rigaPdf, index) => {
+    const valori = getRigaPdfValori(rigaPdf);
     computoRows.push(
       [rigaPdf.codice || index + 1, rigaPdf.descrizione || "", formatMisuraPdf(rigaPdf, "partiUguali"), formatMisuraPdf(rigaPdf, "lunghezza"), formatMisuraPdf(rigaPdf, "larghezza"), formatMisuraPdf(rigaPdf, "altezzaPeso"), "", "", ""],
-      ["", `SOMMANO a ${getUnitaRiga(rigaPdf)}`, "", "", "", "", formatNumeroConDecimali(calcolaQuantitaRiga(rigaPdf)), formatEuro(getPrezzoUnitarioRiga(rigaPdf)), formatEuro(calcolaImportoRiga(rigaPdf))],
+      ["", `SOMMANO a ${getUnitaRiga(rigaPdf)}`, "", "", "", "", formatNumeroConDecimali(valori.quantita), formatEuro(valori.prezzoUnitario), formatEuro(valori.importo)],
     );
   });
 
@@ -313,6 +347,8 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
   autoTable(doc, {
     startY: y,
     body: [
+      ["Lordo", formatEuro(totaliPdf.lordo)],
+      ["Sconto", formatEuro(totaliPdf.sconto)],
       ["Imponibile", formatEuro(totaliPdf.imponibile)],
       [`IVA ${formatNumero(totaliPdf.ivaAliquota)}%`, formatEuro(totaliPdf.ivaImporto)],
       ["Totale complessivo", formatEuro(totaliPdf.totale)],
@@ -325,7 +361,7 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
     },
     margin: { left: 120, right: 8 },
     didParseCell: (data) => {
-      if (data.row.index === 2) data.cell.styles.fontStyle = "bold";
+      if (data.row.index === 4) data.cell.styles.fontStyle = "bold";
     },
   });
   y = doc.lastAutoTable.finalY + 8;

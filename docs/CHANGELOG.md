@@ -9,6 +9,29 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-13
 
+### Sprint 3 - Consolidamento PDF Engine Preventivi
+
+Correzioni:
+
+- Sincronizzato il PDF Engine con i campi gia restituiti dall'API Preventivi.
+- Rimosso dal PDF il ricalcolo di quantita, prezzo unitario e importo riga.
+- Il PDF ora stampa `quantita`, `prezzoUnitario`, `importoLordo`, `importo` e `totale` normalizzati dal gestionale.
+- Il riepilogo PDF riporta Lordo, Sconto, Imponibile, IVA e Totale complessivo.
+- Allineati motore PDF backend, esportatore PDF batch e generatore PDF frontend legacy.
+- Mantenuta la deduplica delle righe identiche consecutive.
+
+Test eseguiti:
+
+- Creazione preventivo reale temporaneo con 3 righe.
+- Verifica API Preventivi, PostgreSQL e PDF sugli stessi valori.
+- PDF generato via backend con HTTP 200 e Content-Type application/pdf.
+- PDF renderizzato e verificato visivamente.
+- Preventivo temporaneo eliminato con residuo zero.
+- Browser test pagina /preventivi senza errori console.
+- Build frontend completata.
+
+---
+
 ### Correzione calcoli Preventivi Enterprise e PDF
 
 Correzioni:
