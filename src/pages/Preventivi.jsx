@@ -844,11 +844,12 @@ function Preventivi() {
 
     try {
       const risposta = await api.post(`/preventivi/${preventivo.id}/apri-cartella`, {});
+      const apertura = await api.post("/cartelle/apri", { path: risposta.folderPath });
       setCartellePreventivi((corrente) => ({
         ...corrente,
         [preventivo.id]: { ...(corrente[preventivo.id] || {}), folderPath: risposta.folderPath, exists: true },
       }));
-      setMessaggio(`Cartella aperta: ${risposta.folderPath}`);
+      setMessaggio(`Cartella aperta: ${apertura.path || risposta.folderPath}`);
     } catch (error) {
       setErrore(error.message);
     }
@@ -859,123 +860,57 @@ function Preventivi() {
     setMessaggio("");
 
     try {
-      const risposta = await api.post(`/preventivi/${preventivo.id}/copia-percorso`, {});
-      const cartella = {
-        ...(cartellePreventivi[preventivo.id] || {}),
-        folderPath: risposta.folderPath,
-        exists: true,
-      };
+      const cartella = cartellePreventivi[preventivo.id] || await api.get(`/preventivi/${preventivo.id}/cartella`);
+      const percorso = cartella.folderPath;
+      if (!percorso) throw new Error("Percorso cartella non disponibile.");
+      let copiato = false;
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(percorso);
+          copiato = true;
+        } catch {
+          copiato = false;
+        }
+      }
+      if (!copiato) {
+        const input = document.createElement("textarea");
+        input.value = percorso;
+        input.setAttribute("readonly", "true");
+        input.style.position = "fixed";
+        input.style.left = "-9999px";
+        document.body.appendChild(input);
+        input.focus();
+        input.select();
+        copiato = document.execCommand("copy");
+        document.body.removeChild(input);
+      }
+      if (!copiato) throw new Error("Copia percorso non riuscita. Copiare manualmente il percorso visualizzato.");
       setCartellePreventivi((corrente) => ({ ...corrente, [preventivo.id]: cartella }));
-      setMessaggio(`Percorso copiato: ${risposta.folderPath}`);
-    } catch (backendError) {
-      try {
-        const cartella = cartellePreventivi[preventivo.id] || await api.get(`/preventivi/${preventivo.id}/cartella`);
-        const percorso = cartella.folderPath;
-        if (!percorso) throw new Error("Percorso cartella non disponibile.");
-        let copiato = false;
-        if (navigator.clipboard?.writeText) {
-          try {
-            await navigator.clipboard.writeText(percorso);
-            copiato = true;
-          } catch {
-            copiato = false;
-          }
-        }
-        if (!copiato) {
-          const input = document.createElement("textarea");
-          input.value = percorso;
-          input.setAttribute("readonly", "true");
-          input.style.position = "fixed";
-          input.style.left = "-9999px";
-          document.body.appendChild(input);
-          input.focus();
-          input.select();
-          copiato = document.execCommand("copy");
-          document.body.removeChild(input);
-        }
-        if (!copiato) throw new Error("Copia percorso non riuscita. Copiare manualmente il percorso visualizzato.");
-        setCartellePreventivi((corrente) => ({ ...corrente, [preventivo.id]: cartella }));
-        setMessaggio(`Percorso copiato: ${percorso}`);
-        if (backendError?.message) console.warn(backendError.message);
-      } catch (error) {
-        setErrore(error.message);
-      }
+      setMessaggio("Percorso copiato negli appunti.");
+    } catch (error) {
+      setErrore(error.message);
     }
   };
-
-  const apriPdfDaUrl = async (pdfUrl, nuovaScheda, preventivo) => {
-    const endpoint = backendUrl(pdfUrl);
-    console.info("Apertura PDF preventivo", {
-      endpoint,
-      id: preventivo?.id,
-      numero: preventivo?.numero,
-      revisione: preventivo?.revisione,
-    });
-    const response = await fetch(endpoint);
-    const contentType = response.headers.get("content-type") || "";
-    console.info("Risposta PDF preventivo", {
-      endpoint,
-      status: response.status,
-      contentType,
-      id: preventivo?.id,
-      numero: preventivo?.numero,
-      revisione: preventivo?.revisione,
-    });
-
+  const apriPdfHttp = async (preventivo, nuovaScheda = null) => {
+    const endpoint = backendUrl(`/api/preventivi/${preventivo.id}/pdf`);
+    const response = await fetch(endpoint, { method: "HEAD" });
     if (!response.ok) {
-      let detail = "";
-      try {
-        detail = contentType.includes("application/json")
-          ? JSON.stringify(await response.json())
-          : await response.text();
-      } catch {
-        detail = "";
-      }
-      const message = response.status === 404
-        ? "PDF non trovato"
-        : `Errore PDF HTTP ${response.status}${detail ? ` - ${detail.slice(0, 300)}` : ""}`;
-      console.error("Errore apertura PDF", { status: response.status, endpoint, detail });
-      throw new Error(message);
+      throw new Error("Il file PDF non e disponibile. Rigenerare il preventivo.");
     }
 
-    if (!contentType.includes("application/pdf")) {
-      const text = await response.text();
-      console.error("Risposta PDF non valida", { status: response.status, endpoint, contentType, detail: text.slice(0, 300) });
-      throw new Error(`Risposta non PDF: ${contentType}. Dettaglio: ${text.slice(0, 300)}`);
-    }
-
-    const blob = await response.blob();
-    if (!blob.size) {
-      console.error("File PDF vuoto", { status: response.status, endpoint, contentType });
-      throw new Error("Il PDF restituito è vuoto.");
-    }
-    console.info("Blob PDF preventivo", {
-      endpoint,
-      status: response.status,
-      contentType,
-      size: blob.size,
-      id: preventivo?.id,
-      numero: preventivo?.numero,
-      revisione: preventivo?.revisione,
-    });
-
-    const objectUrl = URL.createObjectURL(blob);
     if (nuovaScheda && !nuovaScheda.closed) {
-      nuovaScheda.location.href = objectUrl;
+      nuovaScheda.location.href = endpoint;
     } else {
-      window.open(objectUrl, "_blank");
+      window.open(endpoint, "_blank", "noopener,noreferrer");
     }
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
-    return { contentType, size: blob.size };
   };
-
   const apriPdfPreventivo = async (preventivo) => {
     setErrore("");
     setMessaggio("");
     const nuovaScheda = apriFinestraPdfAttesa(preventivo);
 
     try {
-      await apriPdfDaUrl(`/api/preventivi/${preventivo.id}/pdf`, nuovaScheda, preventivo);
+      await apriPdfHttp(preventivo, nuovaScheda);
       setMessaggio("PDF aperto");
     } catch (error) {
       if (nuovaScheda && !nuovaScheda.closed) nuovaScheda.close();
@@ -1171,7 +1106,7 @@ function Preventivi() {
       if (!risposta?.success || !risposta?.pdfUrl) {
         throw new Error("Errore generazione PDF");
       }
-      await apriPdfDaUrl(risposta.pdfUrl, nuovaScheda, preventivo);
+      await apriPdfHttp(preventivo, nuovaScheda);
       setMessaggio("PDF generato e aperto");
       await aggiornaVistaDaDatabase();
     } catch (error) {
@@ -1580,7 +1515,7 @@ function Preventivi() {
       },
       {
         field: "folderPath",
-        headerName: "Percorso cartella",
+        headerName: "Cartella esterna",
         minWidth: 680,
         flex: 1.6,
         sortable: false,
@@ -1765,7 +1700,7 @@ function Preventivi() {
 
         {form.id && (
           <div style={{ marginTop: "14px", padding: "12px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "#f8fafc" }}>
-            <strong>Percorso cartella:</strong>
+            <strong>Cartella esterna:</strong>
             <p style={{ margin: "8px 0", wordBreak: "break-all", color: "#334155" }}>
               {cartellePreventivi[form.id]?.folderPath || "Cartella in preparazione"}
             </p>
@@ -1778,6 +1713,9 @@ function Preventivi() {
               </button>
               <button type="button" onClick={() => copiaPercorsoPreventivo({ id: form.id, numero: form.numero })}>
                 Copia Percorso
+              </button>
+              <button type="button" onClick={() => generaPDF({ ...form, righe: form.righe })}>
+                Rigenera PDF
               </button>
             </div>
           </div>
@@ -2155,3 +2093,6 @@ function Preventivi() {
 }
 
 export default Preventivi;
+
+
+

@@ -16,7 +16,8 @@ export const env = {
     password: process.env.DB_PASSWORD || "LA_PASSWORD_CHE_HAI_SCELTO",
   },
   preventivi: {
-    outputDir: process.env.PREVENTIVI_OUTPUT_DIR || path.join(os.homedir(), "Desktop", "PREVENTIVI TEAM GROUP"),
+    documentRoot: process.env.DOCUMENT_ROOT || process.env.PREVENTIVI_OUTPUT_DIR || "",
+    outputDir: process.env.DOCUMENT_ROOT || process.env.PREVENTIVI_OUTPUT_DIR || path.join(os.homedir(), "Desktop", "PREVENTIVI TEAM GROUP"),
   },
   googleMaps: {
     apiKey: process.env.GOOGLE_MAPS_API_KEY || "",

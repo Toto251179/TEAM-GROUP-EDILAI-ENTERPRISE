@@ -3,6 +3,7 @@ import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import path from "node:path";
 import { query } from "../config/db.js";
 import { createCrudRepository } from "../utils/crud.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -10,7 +11,7 @@ import { archiviaPdfPreventivo, assicuraCartellaPreventiviCliente, trovaPdfPreve
 
 const repository = createCrudRepository({
   table: "preventivi",
-  allowedFields: ["clienteId", "idIndirizzo", "clienteNome", "clienteVia", "clienteCode", "numero", "data", "cliente", "cantiere", "descrizione", "importo", "stato"],
+  allowedFields: ["clienteId", "idIndirizzo", "clienteNome", "clienteVia", "clienteCode", "numero", "data", "cliente", "cantiere", "descrizione", "importo", "stato", "pdfPath", "folderPath", "pdfFileName"],
 });
 
 const router = Router();
@@ -119,6 +120,7 @@ function normalizzaPreventivo(row) {
   delete preventivo.clienteRagioneSociale;
   delete preventivo.clienteIndirizzo;
   delete preventivo.clienteCodeAnagrafica;
+  delete preventivo.pdfPath;
 
   return {
     ...preventivo,
@@ -259,6 +261,18 @@ async function salvaIvaAliquota(preventivoId, ivaAliquota) {
      ON CONFLICT (preventivo_id)
      DO UPDATE SET iva_aliquota = EXCLUDED.iva_aliquota, updated_at = NOW()`,
     [preventivoId, normalizzaIvaAliquota(ivaAliquota)],
+  );
+}
+
+async function salvaArchivioPreventivo(preventivoId, archivio) {
+  await query(
+    `UPDATE preventivi
+     SET pdf_path = $2,
+         folder_path = $3,
+         pdf_file_name = $4,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [preventivoId, archivio.filePath, archivio.folderPath, archivio.fileName],
   );
 }
 
@@ -665,7 +679,45 @@ router.get("/:id/pdf", asyncHandler(async (req, res) => {
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="${archivio.fileName.replaceAll('"', "")}"`);
   res.setHeader("Content-Length", String(stat.size));
-  res.send(await fs.readFile(pdfPath));
+  res.sendFile(path.resolve(pdfPath));
+}));
+
+router.head("/:id/pdf", asyncHandler(async (req, res) => {
+  const preventivo = await getPreventivoCompleto(req.params.id);
+  if (!preventivo) return res.status(404).end();
+
+  const cliente = await getClienteCompleto(preventivo.clienteId);
+  const archivio = await trovaPdfPreventivoArchiviato(preventivo, cliente ? [cliente] : undefined);
+  const pdfPath = archivio.filePath;
+  console.log("pdfPath", pdfPath);
+  console.log("fs.existsSync(pdfPath)", fsSync.existsSync(pdfPath));
+  if (!archivio.exists) return res.status(404).end();
+
+  const stat = await fs.stat(pdfPath);
+  if (!stat.isFile() || stat.size <= 0) return res.status(404).end();
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="${archivio.fileName.replaceAll('"', "")}"`);
+  res.setHeader("Content-Length", String(stat.size));
+  res.status(200).end();
+}));
+
+router.get("/:id/pdf-info", asyncHandler(async (req, res) => {
+  const preventivo = await getPreventivoCompleto(req.params.id);
+  if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
+
+  const cliente = await getClienteCompleto(preventivo.clienteId);
+  const archivio = await trovaPdfPreventivoArchiviato(preventivo, cliente ? [cliente] : undefined);
+  const pdfPath = archivio.filePath;
+  console.log("pdfPath", pdfPath);
+  console.log("fs.existsSync(pdfPath)", fsSync.existsSync(pdfPath));
+
+  res.json({
+    exists: archivio.exists,
+    pdfUrl: `/api/preventivi/${req.params.id}/pdf`,
+    filename: archivio.fileName,
+    folderPath: archivio.folderPath,
+  });
 }));
 
 router.post("/:id/pdf", asyncHandler(async (req, res) => {
@@ -677,6 +729,7 @@ router.post("/:id/pdf", asyncHandler(async (req, res) => {
   const endpoint = `/api/preventivi/${req.params.id}/pdf`;
   try {
     archivio = await archiviaPdfPreventivo(preventivo, cliente ? [cliente] : undefined);
+    await salvaArchivioPreventivo(req.params.id, archivio);
     const pdfPath = archivio.filePath;
     console.log("pdfPath", pdfPath);
     console.log("fs.existsSync(pdfPath)", fsSync.existsSync(pdfPath));
@@ -696,7 +749,6 @@ router.post("/:id/pdf", asyncHandler(async (req, res) => {
       size: stat.size,
       archivio: {
         fileName: archivio.fileName,
-        filePath: pdfPath,
         folderPath: archivio.folderPath,
       },
     });
@@ -724,7 +776,6 @@ router.post("/:id/pdf", asyncHandler(async (req, res) => {
           size: stat.size,
           archivio: {
             fileName: pdfEsistente.fileName,
-            filePath: pdfPath,
             folderPath: pdfEsistente.folderPath,
           },
         });
@@ -770,6 +821,7 @@ router.post("/:id/archivia-pdf", asyncHandler(async (req, res) => {
   let archivio;
   try {
     archivio = await archiviaPdfPreventivo(preventivo, cliente ? [cliente] : undefined);
+    await salvaArchivioPreventivo(req.params.id, archivio);
   } catch (error) {
     return res.status(500).json({
       message: "Archiviazione preventivo non riuscita.",
@@ -785,7 +837,6 @@ router.post("/:id/archivia-pdf", asyncHandler(async (req, res) => {
     archivio: {
       rootPath: archivio.rootPath,
       fileName: archivio.fileName,
-      filePath: archivio.filePath,
       clienteFolderName: archivio.clienteFolderName,
       clienteFolderPath: archivio.clienteFolderPath,
       folderName: archivio.folderName,
@@ -803,19 +854,7 @@ router.post("/:id/apri-cartella", asyncHandler(async (req, res) => {
   const folderPath = archivio.folderPath;
   console.log("folderPath", folderPath);
   console.log("fs.existsSync(folderPath)", fsSync.existsSync(folderPath));
-  try {
-    await fs.access(folderPath);
-    spawn("explorer.exe", [folderPath], { detached: true, stdio: "ignore" }).unref();
-  } catch (error) {
-    return res.status(500).json({
-      message: "Apertura cartella non riuscita.",
-      percorsoCercato: folderPath || process.env.PREVENTIVI_OUTPUT_DIR || "",
-      errore: error.message,
-      motivo: error.code || "Errore apertura cartella",
-    });
-  }
-
-  res.json({ message: "Cartella aperta.", folderPath });
+  res.json({ message: "Cartella preventivo disponibile.", folderPath });
 }));
 
 router.post("/:id/copia-percorso", asyncHandler(async (req, res) => {
@@ -866,7 +905,6 @@ router.post("/:id/apri-pdf", asyncHandler(async (req, res) => {
     message: "PDF trovato.",
     pdfUrl: `/api/preventivi/${req.params.id}/pdf`,
     filename: archivio.fileName,
-    filePath: pdfPath,
   });
 }));
 

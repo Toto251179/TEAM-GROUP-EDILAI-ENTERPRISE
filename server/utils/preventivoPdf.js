@@ -139,6 +139,14 @@ async function ensureCanonicalDirectory(parentDir, desiredName, identityPrefix) 
   return desiredPath;
 }
 
+async function ensureClienteDocumentFolders(clienteFolderPath) {
+  await Promise.all(
+    ["Preventivi", "Cantieri", "Rapportini", "Fatture", "Allegati"].map((folderName) =>
+      ensureDir(path.join(clienteFolderPath, folderName)),
+    ),
+  );
+}
+
 function normalizzaViaPreventivo(value) {
   if (!value) return "";
   if (typeof value === "object") return [value.via || value.indirizzo || "", value.civico || ""].filter(Boolean).join(" ");
@@ -364,18 +372,15 @@ export async function archiviaPdfPreventivo(preventivo, clientiArchivio = [], ou
   const { base, revisione } = parseNumeroRevisione(preventivo.numero);
   const clienteNome = getClienteNome(preventivo, clientiArchivio) || "CLIENTE";
   const clienteCode = getClienteCode(preventivo, clientiArchivio) || "SENZA-ID";
-  const clientiRoot = path.join(rootOutputDir, "CLIENTI");
+  const clientiRoot = path.join(rootOutputDir, "Clienti");
   const clienteFolderName = safeFileName(`${clienteCode} - ${clienteNome}`);
   const clienteFolderPath = await ensureCanonicalDirectory(clientiRoot, clienteFolderName, `${safeFileName(clienteCode)} - `);
-  const preventiviRoot = path.join(clienteFolderPath, "PREVENTIVI");
-  const oggetto = getOggettoPreventivo(preventivo);
-  const preventivoFolderName = safeFileName(`${base} - ${oggetto}`);
-  const folderPath = await ensureCanonicalDirectory(preventiviRoot, preventivoFolderName, `${base} - `);
-  await ensureDir(path.join(folderPath, "Allegati"));
-  await ensureDir(path.join(folderPath, "Foto"));
+  await ensureClienteDocumentFolders(clienteFolderPath);
+  const preventiviRoot = path.join(clienteFolderPath, "Preventivi");
+  await ensureDir(preventiviRoot);
 
   const fileName = `${safeFileName(`${base}-${revisione}`)}.pdf`;
-  const filePath = path.join(folderPath, fileName);
+  const filePath = path.join(preventiviRoot, fileName);
   const buffer = await generaPdfPreventivoBuffer(preventivo, clientiArchivio);
   await fs.writeFile(filePath, buffer);
   return {
@@ -386,8 +391,8 @@ export async function archiviaPdfPreventivo(preventivo, clientiArchivio = [], ou
     clientiRoot,
     clienteFolderName: path.basename(clienteFolderPath),
     clienteFolderPath,
-    folderName: path.basename(folderPath),
-    folderPath,
+    folderName: path.basename(preventiviRoot),
+    folderPath: preventiviRoot,
   };
 }
 
@@ -396,30 +401,33 @@ export async function trovaPdfPreventivoArchiviato(preventivo, clientiArchivio =
   const { base, revisione } = parseNumeroRevisione(preventivo.numero);
   const clienteNome = getClienteNome(preventivo, clientiArchivio) || "CLIENTE";
   const clienteCode = getClienteCode(preventivo, clientiArchivio) || "SENZA-ID";
-  const clientiRoot = path.join(rootOutputDir, "CLIENTI");
+  const clientiRoot = path.join(rootOutputDir, "Clienti");
   const clienteFolderName =
     await findDirectoryByPrefix(clientiRoot, `${safeFileName(clienteCode)} - `) ||
     safeFileName(`${clienteCode} - ${clienteNome}`);
   const clienteFolderPath = path.join(clientiRoot, clienteFolderName);
-  const preventiviRoot = path.join(clienteFolderPath, "PREVENTIVI");
+  const preventiviRoot = path.join(clienteFolderPath, "Preventivi");
   const oggetto = getOggettoPreventivo(preventivo);
-  const folderName =
+  const fileName = `${safeFileName(`${base}-${revisione}`)}.pdf`;
+  const filePath = path.join(preventiviRoot, fileName);
+  const legacyFolderName =
     await findDirectoryByPrefix(preventiviRoot, `${base} - `) ||
     safeFileName(`${base} - ${oggetto}`);
-  const folderPath = path.join(preventiviRoot, folderName);
-  const fileName = `${safeFileName(`${base}-${revisione}`)}.pdf`;
-  const filePath = path.join(folderPath, fileName);
+  const legacyFolderPath = path.join(preventiviRoot, legacyFolderName);
+  const legacyFilePath = path.join(legacyFolderPath, fileName);
+  const fileExists = await pathExists(filePath);
+  const legacyExists = !fileExists && await pathExists(legacyFilePath);
 
   return {
     fileName,
-    filePath,
+    filePath: legacyExists ? legacyFilePath : filePath,
     rootPath: rootOutputDir,
     clientiRoot,
     clienteFolderName,
     clienteFolderPath,
-    folderName,
-    folderPath,
-    exists: await pathExists(filePath),
+    folderName: legacyExists ? legacyFolderName : "Preventivi",
+    folderPath: legacyExists ? legacyFolderPath : preventiviRoot,
+    exists: fileExists || legacyExists,
   };
 }
 
@@ -428,10 +436,11 @@ export async function assicuraCartellaPreventiviCliente(preventivo, clientiArchi
   await fs.mkdir(rootOutputDir, { recursive: true });
   const clienteNome = getClienteNome(preventivo, clientiArchivio) || "CLIENTE";
   const clienteCode = getClienteCode(preventivo, clientiArchivio) || "SENZA-ID";
-  const clientiRoot = path.join(rootOutputDir, "CLIENTI");
+  const clientiRoot = path.join(rootOutputDir, "Clienti");
   const clienteFolderName = safeFileName(`${clienteCode} - ${clienteNome}`);
   const clienteFolderPath = await ensureCanonicalDirectory(clientiRoot, clienteFolderName, `${safeFileName(clienteCode)} - `);
-  const preventiviRoot = path.join(clienteFolderPath, "PREVENTIVI");
+  await ensureClienteDocumentFolders(clienteFolderPath);
+  const preventiviRoot = path.join(clienteFolderPath, "Preventivi");
   await ensureDir(preventiviRoot);
 
   return {
@@ -439,7 +448,7 @@ export async function assicuraCartellaPreventiviCliente(preventivo, clientiArchi
     clientiRoot,
     clienteFolderName: path.basename(clienteFolderPath),
     clienteFolderPath,
-    folderName: "PREVENTIVI",
+    folderName: "Preventivi",
     folderPath: preventiviRoot,
     exists: await pathExists(preventiviRoot),
   };

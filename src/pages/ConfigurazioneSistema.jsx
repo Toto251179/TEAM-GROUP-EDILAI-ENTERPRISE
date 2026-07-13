@@ -56,6 +56,15 @@ function ConfigurazioneSistema() {
     }
   };
 
+  const apriCartellaBackend = async (folderPath) => {
+    try {
+      const res = await api.post("/cartelle/apri", { path: folderPath });
+      setMessage(`Cartella aperta: ${res.path}`);
+    } catch (error) {
+      setMessage(error.message);
+    }
+  };
+
   const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
   const updateNested = (section, field, value) => setForm((current) => ({ ...current, [section]: { ...(current[section] || {}), [field]: value } }));
   const updateSync = (key, field, value) => setForm((current) => ({ ...current, sync: { ...(current.sync || {}), [key]: { ...(current.sync?.[key] || {}), [field]: value } } }));
@@ -114,7 +123,7 @@ function ConfigurazioneSistema() {
             <button onClick={() => setMessage("Selezione cartella dal browser non disponibile: incollare il percorso completo.")}>Seleziona cartella</button>
             <button onClick={() => salva()}>Salva percorso</button>
             <button onClick={() => runTest("/system-settings/test-archive", { archivePath: form.archivePath })}>Verifica cartella</button>
-            <button onClick={() => window.open(`file:///${String(form.archivePath || settings.archivePath).replaceAll("\\", "/")}`)}>Apri cartella</button>
+            <button onClick={() => apriCartellaBackend(form.archivePath || settings.archivePath)}>Apri cartella</button>
           </div>
         </section>
 
@@ -151,7 +160,7 @@ function ConfigurazioneSistema() {
             <button onClick={() => salva()}>Salva backup</button>
             <button onClick={() => runTest("/system-settings/backup-now", {})}>Esegui backup adesso</button>
             <button onClick={() => setMessage(settings.logs?.backup?.message || "Nessun backup disponibile")}>Verifica ultimo backup</button>
-            <button onClick={() => window.open(`file:///${String(form.backup?.path || settings.backup?.path || "").replaceAll("\\", "/")}`)}>Apri cartella backup</button>
+            <button onClick={() => apriCartellaBackend(form.backup?.path || settings.backup?.path || "")}>Apri cartella backup</button>
           </div>
         </section>
 

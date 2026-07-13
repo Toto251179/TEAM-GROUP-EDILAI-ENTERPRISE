@@ -60,6 +60,9 @@ CREATE TABLE IF NOT EXISTS preventivi (
   descrizione TEXT NOT NULL,
   importo NUMERIC(12, 2) NOT NULL DEFAULT 0,
   stato TEXT NOT NULL DEFAULT 'Bozza',
+  pdf_path TEXT,
+  folder_path TEXT,
+  pdf_file_name TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

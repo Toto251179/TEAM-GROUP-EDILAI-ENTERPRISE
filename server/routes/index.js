@@ -16,6 +16,7 @@ import referenti from "./referenti.js";
 import condomini from "./condomini.js";
 import centroOperativo from "./centroOperativo.js";
 import systemSettings from "./systemSettings.js";
+import cartelle from "./cartelle.js";
 
 const router = Router();
 
@@ -36,5 +37,6 @@ router.use("/referenti", referenti);
 router.use("/condomini", condomini);
 router.use("/centro-operativo", centroOperativo);
 router.use("/system-settings", systemSettings);
+router.use("/cartelle", cartelle);
 
 export default router;
