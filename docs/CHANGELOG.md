@@ -9,6 +9,26 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-13
 
+### Chiusura modulo Preventivi Enterprise 1.0
+
+Correzioni:
+
+- Consolidata la verifica finale del modulo Preventivi Enterprise senza introdurre nuove funzionalita.
+- Confermati gestione preventivi, righe lavorazioni, motore di calcolo, PDF, archivio, collegamento cliente e trasformazione in cantiere.
+- Aggiornata la ROADMAP con Sprint 2 - Preventivi completato.
+- Congelato il modulo Preventivi in AGENTS.md per consentire solo bug fix approvati dal Product Owner.
+
+Test eseguiti:
+
+- Creazione preventivo reale temporaneo collegato a cliente PostgreSQL.
+- Verifica API Preventivi: creazione, lettura, modifica, cartella archivio, generazione PDF, download PDF, trasformazione in cantiere ed eliminazione.
+- Verifica PostgreSQL su testata preventivo, righe lavorazioni e cantiere generato.
+- Verifica PDF testuale e visiva con righe non duplicate e totali identici al gestionale.
+- Verifica frontend nel browser su /preventivi senza errori console.
+- Build frontend completata.
+
+---
+
 ### Sprint 3 - Consolidamento PDF Engine Preventivi
 
 Correzioni:

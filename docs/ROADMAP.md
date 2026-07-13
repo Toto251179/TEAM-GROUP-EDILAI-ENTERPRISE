@@ -16,9 +16,9 @@ Obiettivi:
 - test CRUD;
 - build.
 
-### Sprint 2 - Preventivi Enterprise
+### Sprint 2 - Preventivi
 
-Stato: DA INIZIARE
+Stato: COMPLETATO
 
 ### Sprint 3 - Elenco Prezzi
 

@@ -149,6 +149,10 @@ Deve mantenere:
 
 Non reintrodurre funzioni email.
 
+## MODULO PREVENTIVI CONGELATO
+
+Da questo momento sono consentiti solo bug fix approvati dal Product Owner.
+
 ## Interfaccia
 
 Mantenere:
