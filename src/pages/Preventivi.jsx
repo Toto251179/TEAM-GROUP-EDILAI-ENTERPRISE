@@ -73,6 +73,7 @@ const preventivoVuoto = {
 };
 
 const rigaVuota = {
+  tipoRiga: "ECONOMICA",
   categoria: "Edili",
   categoriaBloccata: true,
   categoriaModificataManualmente: false,
@@ -86,6 +87,30 @@ const rigaVuota = {
   prezzoUnitario: "",
   sconto: "0",
 };
+
+function getTipoRigaPreventivo(riga = {}) {
+  const tipo = String(riga.tipoRiga ?? riga.tipo_riga ?? "ECONOMICA").trim().toUpperCase();
+  return ["TITOLO", "NOTA"].includes(tipo) ? tipo : "ECONOMICA";
+}
+
+function isRigaEconomicaPreventivo(riga = {}) {
+  return getTipoRigaPreventivo(riga) === "ECONOMICA";
+}
+
+function rigaTitoloVuota() {
+  return {
+    tipoRiga: "TITOLO",
+    descrizione: "",
+    mostraSubtotaleCapitolo: false,
+  };
+}
+
+function rigaNotaVuota() {
+  return {
+    tipoRiga: "NOTA",
+    descrizione: "",
+  };
+}
 
 function formatEuro(value) {
   const importo = Number(value || 0).toLocaleString("it-IT", {
@@ -132,6 +157,7 @@ function formatMisuraPdf(riga, campo) {
 }
 
 function calcolaQuantitaRiga(riga) {
+  if (!isRigaEconomicaPreventivo(riga)) return 0;
   const partiUguali = numeroPreventivo(riga.partiUguali ?? riga.parti_uguali);
   const lunghezza = numeroPreventivo(riga.lunghezza);
   const larghezza = numeroPreventivo(riga.larghezza);
@@ -160,6 +186,7 @@ function calcolaQuantitaRiga(riga) {
 }
 
 function calcolaLordoRiga(riga) {
+  if (!isRigaEconomicaPreventivo(riga)) return 0;
   const quantita = calcolaQuantitaRiga(riga);
   const prezzoUnitario = numeroPreventivo(riga.prezzoUnitario);
 
@@ -167,6 +194,7 @@ function calcolaLordoRiga(riga) {
 }
 
 function calcolaImportoRiga(riga) {
+  if (!isRigaEconomicaPreventivo(riga)) return 0;
   const sconto = numeroPreventivo(riga.sconto);
 
   return Number((calcolaLordoRiga(riga) * (1 - sconto / 100)).toFixed(2));
@@ -243,8 +271,9 @@ function normalizzaIvaAliquota(ivaAliquota) {
 }
 
 function calcolaTotali(righe = [], ivaAliquota = IVA_DEFAULT) {
-  const lordo = Number(righe.reduce((totale, riga) => totale + calcolaLordoRiga(riga), 0).toFixed(2));
-  const imponibile = Number(righe.reduce((totale, riga) => totale + calcolaImportoRiga(riga), 0).toFixed(2));
+  const righeEconomiche = (Array.isArray(righe) ? righe : []).filter(isRigaEconomicaPreventivo);
+  const lordo = Number(righeEconomiche.reduce((totale, riga) => totale + calcolaLordoRiga(riga), 0).toFixed(2));
+  const imponibile = Number(righeEconomiche.reduce((totale, riga) => totale + calcolaImportoRiga(riga), 0).toFixed(2));
   const sconto = Number((lordo - imponibile).toFixed(2));
   const aliquota = normalizzaIvaAliquota(ivaAliquota);
   const iva = Number((imponibile * (aliquota / 100)).toFixed(2));
@@ -254,8 +283,22 @@ function calcolaTotali(righe = [], ivaAliquota = IVA_DEFAULT) {
 }
 
 function normalizzaRiga(riga) {
+  const tipoRiga = getTipoRigaPreventivo(riga);
+  if (tipoRiga !== "ECONOMICA") {
+    return {
+      tipoRiga,
+      descrizione: String(riga.descrizione || ""),
+      ordineRiga: riga.ordineRiga ?? riga.ordine_riga ?? 0,
+      gruppoId: riga.gruppoId ?? riga.gruppo_id ?? null,
+      mostraSubtotaleCapitolo: tipoRiga === "TITOLO"
+        ? Boolean(riga.mostraSubtotaleCapitolo ?? riga.mostra_subtotale_capitolo)
+        : false,
+    };
+  }
+
   const rigaConMisure = {
     ...riga,
+    tipoRiga,
     categoria: riga.categoria || "Edili",
     categoriaBloccata: riga.categoriaBloccata !== false,
     categoriaModificataManualmente: Boolean(riga.categoriaModificataManualmente),
@@ -438,6 +481,7 @@ function Preventivi() {
   const [archivioInCorso, setArchivioInCorso] = useState("");
   const [menuAzioni, setMenuAzioni] = useState({ anchorEl: null, preventivo: null });
   const [cartellePreventivi, setCartellePreventivi] = useState({});
+  const [capitoliCompressi, setCapitoliCompressi] = useState({});
 
   const menuAzioniAperto = Boolean(menuAzioni.anchorEl);
   const actionButtonSx = {
@@ -525,7 +569,8 @@ function Preventivi() {
           setClienti(clientiDb);
           setCantieri(cantieriDb);
           if (vocePrezzario) {
-            setRiga({
+          setRiga({
+              tipoRiga: "ECONOMICA",
               elencoPrezziId: vocePrezzario.id,
               codice: vocePrezzario.codice,
               categoria: vocePrezzario.categoria || "Edili",
@@ -707,9 +752,23 @@ function Preventivi() {
 
     setForm((corrente) => ({
       ...corrente,
-      righe: [...corrente.righe, normalizzaRiga(riga)],
+      righe: [...corrente.righe, normalizzaRiga({ ...riga, ordineRiga: corrente.righe.length })],
     }));
     setRiga(rigaVuota);
+  };
+
+  const aggiungiTitoloCapitolo = () => {
+    setForm((corrente) => ({
+      ...corrente,
+      righe: [...corrente.righe, { ...rigaTitoloVuota(), ordineRiga: corrente.righe.length }],
+    }));
+  };
+
+  const aggiungiNotaDescrittiva = () => {
+    setForm((corrente) => ({
+      ...corrente,
+      righe: [...corrente.righe, { ...rigaNotaVuota(), ordineRiga: corrente.righe.length }],
+    }));
   };
 
   const selezionaVocePrezzario = (voceId) => {
@@ -717,6 +776,7 @@ function Preventivi() {
     if (!voce) return;
 
     setRiga({
+      tipoRiga: "ECONOMICA",
       elencoPrezziId: voce.id,
       codice: voce.codice,
       categoria: voce.categoria || "Edili",
@@ -783,7 +843,7 @@ function Preventivi() {
       const righe = [...corrente.righe];
       righe.splice(index + 1, 0, normalizzaRiga({ ...rigaDaDuplicare }));
 
-      return { ...corrente, righe };
+      return { ...corrente, righe: righe.map((item, itemIndex) => ({ ...item, ordineRiga: itemIndex })) };
     });
   };
 
@@ -796,8 +856,42 @@ function Preventivi() {
       const [rigaSpostata] = righe.splice(index, 1);
       righe.splice(nuovoIndex, 0, rigaSpostata);
 
-      return { ...corrente, righe };
+      return { ...corrente, righe: righe.map((item, itemIndex) => ({ ...item, ordineRiga: itemIndex })) };
     });
+  };
+
+  const toggleCapitoloCompresso = (index) => {
+    setCapitoliCompressi((corrente) => ({ ...corrente, [index]: !corrente[index] }));
+  };
+
+  const aggiornaSubtotaleCapitolo = (index, valore) => {
+    setForm((corrente) => ({
+      ...corrente,
+      righe: corrente.righe.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, mostraSubtotaleCapitolo: valore } : item,
+      ),
+    }));
+  };
+
+  const isRigaNascostaDaCapitolo = (index) => {
+    let capitoloCorrente = null;
+    for (let itemIndex = index - 1; itemIndex >= 0; itemIndex -= 1) {
+      if (getTipoRigaPreventivo(form.righe[itemIndex]) === "TITOLO") {
+        capitoloCorrente = itemIndex;
+        break;
+      }
+    }
+    return capitoloCorrente !== null && Boolean(capitoliCompressi[capitoloCorrente]);
+  };
+
+  const calcolaSubtotaleCapitolo = (titoloIndex) => {
+    let totale = 0;
+    for (let itemIndex = titoloIndex + 1; itemIndex < form.righe.length; itemIndex += 1) {
+      const item = form.righe[itemIndex];
+      if (getTipoRigaPreventivo(item) === "TITOLO") break;
+      if (isRigaEconomicaPreventivo(item)) totale += calcolaImportoRiga(item);
+    }
+    return Number(totale.toFixed(2));
   };
 
   const resetForm = (preventiviBase = preventivi) => {
@@ -827,6 +921,7 @@ function Preventivi() {
       righe: (preventivo.righe || []).map(normalizzaRiga),
     });
     setRiga(rigaVuota);
+    setCapitoliCompressi({});
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -965,7 +1060,7 @@ function Preventivi() {
       descrizione: form.descrizione,
       ivaAliquota: normalizzaIvaAliquota(form.ivaAliquota),
       stato: statoForzato || form.stato,
-      righe: form.righe.map((rigaPreventivo) => normalizzaRiga({ ...rigaPreventivo, categoriaBloccata: true })),
+      righe: form.righe.map((rigaPreventivo, index) => normalizzaRiga({ ...rigaPreventivo, categoriaBloccata: true, ordineRiga: index })),
     };
 
     try {
@@ -1094,7 +1189,7 @@ function Preventivi() {
       descrizione: preventivo.descrizione,
       ivaAliquota: normalizzaIvaAliquota(preventivo.ivaAliquota),
       stato: "Bozza",
-      righe: (preventivo.righe || []).map(normalizzaRiga),
+      righe: (preventivo.righe || []).map((rigaPreventivo, index) => normalizzaRiga({ ...rigaPreventivo, ordineRiga: index })),
     };
 
     try {
@@ -1850,7 +1945,12 @@ function Preventivi() {
               onChange={(e) => setRiga({ ...riga, sconto: e.target.value })}
             />
             <input readOnly value={formatEuro(calcolaImportoRiga(riga))} />
-            <button onClick={aggiungiRiga}>Aggiungi</button>
+            <button onClick={aggiungiRiga}>+ Voce economica</button>
+          </div>
+          <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
+            <button type="button" onClick={aggiungiRiga}>+ Voce economica</button>
+            <button type="button" onClick={aggiungiTitoloCapitolo}>+ Titolo capitolo</button>
+            <button type="button" onClick={aggiungiNotaDescrittiva}>+ Nota descrittiva</button>
           </div>
         </div>
 
@@ -1874,7 +1974,77 @@ function Preventivi() {
             </tr>
           </thead>
           <tbody>
-            {form.righe.map((rigaPreventivo, index) => (
+            {form.righe.map((rigaPreventivo, index) => {
+              const tipoRiga = getTipoRigaPreventivo(rigaPreventivo);
+              const rigaNascosta = tipoRiga !== "TITOLO" && isRigaNascostaDaCapitolo(index);
+              if (rigaNascosta) return null;
+              if (tipoRiga !== "ECONOMICA") {
+                const isTitolo = tipoRiga === "TITOLO";
+                const subtotaleCapitolo = isTitolo ? calcolaSubtotaleCapitolo(index) : 0;
+
+                return (
+                  <tr
+                    key={`${tipoRiga}-${rigaPreventivo.descrizione}-${index}`}
+                    style={{ background: isTitolo ? "#fff7ed" : "#f8fafc" }}
+                  >
+                    <td>{index + 1}</td>
+                    <td colSpan={12} style={{ textAlign: "left", padding: "10px 12px" }}>
+                      <div style={{ display: "grid", gap: "8px" }}>
+                        <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+                          <strong
+                            style={{
+                              fontSize: isTitolo ? "1rem" : "0.9rem",
+                              color: isTitolo ? "#9a3412" : "#334155",
+                            }}
+                          >
+                            {isTitolo ? "Titolo" : "Nota"}
+                          </strong>
+                          {isTitolo && (
+                            <>
+                              <button type="button" onClick={() => toggleCapitoloCompresso(index)}>
+                                {capitoliCompressi[index] ? "Espandi" : "Comprimi"}
+                              </button>
+                              <label style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(rigaPreventivo.mostraSubtotaleCapitolo)}
+                                  onChange={(e) => aggiornaSubtotaleCapitolo(index, e.target.checked)}
+                                />
+                                Mostra subtotale capitolo
+                              </label>
+                              {rigaPreventivo.mostraSubtotaleCapitolo && (
+                                <span style={{ fontWeight: 700 }}>Subtotale: {formatEuro(subtotaleCapitolo)}</span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                        <textarea
+                          value={rigaPreventivo.descrizione}
+                          onChange={(e) => aggiornaRigaPreventivo(index, "descrizione", e.target.value)}
+                          placeholder={isTitolo ? "Titolo capitolo" : "Nota descrittiva"}
+                          style={{
+                            minHeight: isTitolo ? "42px" : "86px",
+                            width: "100%",
+                            resize: "vertical",
+                            fontWeight: isTitolo ? 800 : 400,
+                            fontSize: isTitolo ? "1rem" : "0.92rem",
+                          }}
+                        />
+                      </div>
+                    </td>
+                    <td style={{ minWidth: "260px", whiteSpace: "nowrap" }}>
+                      <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                        <button disabled={index === 0} onClick={() => spostaRiga(index, -1)}>Su</button>
+                        <button disabled={index === form.righe.length - 1} onClick={() => spostaRiga(index, 1)}>Giu</button>
+                        <button onClick={() => duplicaRiga(index)}>Copia</button>
+                        <button onClick={() => rimuoviRiga(index)}>Rimuovi</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }
+
+              return (
               <tr key={`${rigaPreventivo.descrizione}-${index}`}>
                 <td>{index + 1}</td>
                 <td>
@@ -1996,7 +2166,8 @@ function Preventivi() {
                   </div>
                 </td>
               </tr>
-            ))}
+            );
+            })}
           </tbody>
         </table>
 

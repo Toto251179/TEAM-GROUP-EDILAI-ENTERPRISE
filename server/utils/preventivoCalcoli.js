@@ -30,6 +30,15 @@ export function arrotondaEuro(value) {
   return Number(numeroPreventivo(value).toFixed(2));
 }
 
+export function getTipoRiga(riga = {}) {
+  const tipo = String(riga.tipoRiga ?? riga.tipo_riga ?? "ECONOMICA").trim().toUpperCase();
+  return ["TITOLO", "NOTA"].includes(tipo) ? tipo : "ECONOMICA";
+}
+
+export function isRigaEconomica(riga = {}) {
+  return getTipoRiga(riga) === "ECONOMICA";
+}
+
 export function getUnitaRiga(riga = {}) {
   return String(riga.unita ?? riga.unitaMisura ?? riga.unita_misura ?? riga.um ?? "").trim();
 }
@@ -122,7 +131,7 @@ export function normalizzaIvaAliquota(ivaAliquota, valorePredefinito = 22) {
 }
 
 export function calcolaTotaliPreventivo(righe = [], ivaAliquota = 22) {
-  const righeNormalizzate = Array.isArray(righe) ? righe : [];
+  const righeNormalizzate = (Array.isArray(righe) ? righe : []).filter(isRigaEconomica);
   const lordo = arrotondaEuro(
     righeNormalizzate.reduce((totale, riga) => totale + calcolaImportoLordoRiga(riga), 0),
   );
@@ -150,6 +159,13 @@ export function calcolaTotaliPreventivo(righe = [], ivaAliquota = 22) {
 
 function chiaveRigaPdf(riga = {}) {
   const normalizzaTesto = (value) => String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  if (!isRigaEconomica(riga)) {
+    return [
+      getTipoRiga(riga),
+      normalizzaTesto(riga.descrizione),
+      Boolean(riga.mostraSubtotaleCapitolo ?? riga.mostra_subtotale_capitolo),
+    ].join("|");
+  }
   const misure = getMisureRiga(riga);
 
   return [

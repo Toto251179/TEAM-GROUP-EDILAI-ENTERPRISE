@@ -9,6 +9,30 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-13
 
+### Capitoli e righe descrittive Preventivi
+
+Correzioni:
+
+- Aggiunti tipi riga `ECONOMICA`, `TITOLO` e `NOTA` al modulo Preventivi.
+- Aggiunti Titoli capitolo e Note descrittive non contabilizzate nel gestionale e nel PDF.
+- Aggiunto ordine persistente delle righe preventivo con comandi Sposta su e Sposta giu.
+- Aggiunta opzione subtotale capitolo informativa, esclusa dal totale generale.
+- Aggiunta funzione Comprimi/Espandi locale per i capitoli nel gestionale.
+- Il backend ignora i valori economici ricevuti per Titoli e Note.
+
+Test eseguiti:
+
+- Migrazione sicura PostgreSQL per `tipo_riga`, `ordine_riga`, `gruppo_id` e `mostra_subtotale_capitolo`.
+- Creazione preventivo reale con Titolo, Nota e due righe economiche da 4600,00 e 8500,00.
+- Verifica imponibile 13100,00, IVA 22% e totale 15982,00 senza alterazioni da Titolo/Nota.
+- Verifica salvataggio, ricarica, modifica ordine, duplicazione e cancellazione dati di test.
+- Verifica PDF con Titolo, Nota, subtotale capitolo 13100,00 e totale generale non duplicato.
+- Regressione preventivo con sole righe economiche: calcoli, IVA e PDF invariati.
+- Verifica browser pagina /preventivi senza errori console.
+- Build frontend completata.
+
+---
+
 ### Semplificazione riga totale PDF Preventivi
 
 Correzioni:

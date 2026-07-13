@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
+  getTipoRiga,
   getUnitaRiga,
+  isRigaEconomica,
   numeroPreventivo,
 } from "../server/utils/preventivoCalcoli.js";
 
@@ -154,6 +156,10 @@ function getRigaPdfValori(riga = {}) {
   };
 }
 
+function getDescrizioneRigaPdf(riga = {}) {
+  return String(riga.descrizione || "").trim();
+}
+
 function getTotaliPdf(preventivo = {}) {
   const lordo = numeroCampoApi(preventivo, "lordo", "preventivo");
   const sconto = numeroCampoApi(preventivo, "sconto", "preventivo");
@@ -166,6 +172,14 @@ function getTotaliPdf(preventivo = {}) {
 }
 
 function chiaveRigaPdfApi(riga = {}) {
+  if (!isRigaEconomica(riga)) {
+    return [
+      getTipoRiga(riga),
+      getDescrizioneRigaPdf(riga).replace(/\s+/g, " ").toLowerCase(),
+      Boolean(riga.mostraSubtotaleCapitolo ?? riga.mostra_subtotale_capitolo),
+    ].join("|");
+  }
+
   const valori = getRigaPdfValori(riga);
   return [
     String(riga.codice ?? "").trim().toLowerCase(),
@@ -191,6 +205,16 @@ function deduplicaRighePdfApi(righe = []) {
   }
 
   return risultato;
+}
+
+function calcolaSubtotaleCapitoloPdf(righe = [], titoloIndex = 0) {
+  let totale = 0;
+  for (let index = titoloIndex + 1; index < righe.length; index += 1) {
+    const riga = righe[index];
+    if (getTipoRiga(riga) === "TITOLO") break;
+    if (isRigaEconomica(riga)) totale += getRigaPdfValori(riga).importo;
+  }
+  return Number(totale.toFixed(2));
 }
 
 function formatMisuraPdf(riga, campo) {
@@ -276,7 +300,28 @@ async function generaPdf(preventivo, clientiArchivio = []) {
   y += 5;
 
   const computoRows = [];
+  let titoloSubtotaleAttivo = null;
+  const aggiungiSubtotaleCapitolo = () => {
+    if (titoloSubtotaleAttivo === null) return;
+    const titolo = righe[titoloSubtotaleAttivo];
+    if (titolo?.mostraSubtotaleCapitolo || titolo?.mostra_subtotale_capitolo) {
+      computoRows.push([{ content: `TOTALE CAPITOLO ${formatEuro(calcolaSubtotaleCapitoloPdf(righe, titoloSubtotaleAttivo))}`, colSpan: 9, styles: { fontStyle: "bold", halign: "right", fillColor: [255, 247, 237] } }]);
+    }
+  };
+
   righe.forEach((rigaPdf, index) => {
+    const tipoRiga = getTipoRiga(rigaPdf);
+    if (tipoRiga === "TITOLO") {
+      aggiungiSubtotaleCapitolo();
+      titoloSubtotaleAttivo = index;
+      computoRows.push([{ content: getDescrizioneRigaPdf(rigaPdf), colSpan: 9, styles: { fontStyle: "bold", fontSize: 8.6, fillColor: [255, 247, 237], cellPadding: { top: 3, right: 1, bottom: 2.4, left: 1.5 } } }]);
+      return;
+    }
+    if (tipoRiga === "NOTA") {
+      computoRows.push([{ content: getDescrizioneRigaPdf(rigaPdf), colSpan: 9, styles: { fontStyle: "normal", fontSize: 7.6, fillColor: [248, 250, 252], cellPadding: { top: 2.2, right: 1, bottom: 2.2, left: 1.5 } } }]);
+      return;
+    }
+
     const valori = getRigaPdfValori(rigaPdf);
     const quantita = formatNumeroConDecimali(valori.quantita);
     const prezzo = formatEuro(valori.prezzoUnitario);
@@ -296,6 +341,7 @@ async function generaPdf(preventivo, clientiArchivio = []) {
       ["", `SOMMANO a ${getUnitaRiga(rigaPdf)}`, "", "", "", "", quantita, prezzo, importo],
     );
   });
+  aggiungiSubtotaleCapitolo();
 
   autoTable(doc, {
     startY: y,
@@ -376,31 +422,10 @@ async function generaPdf(preventivo, clientiArchivio = []) {
   doc.line(totaleImportoX, totaleY, totaleImportoX, totaleY + totaleHeight);
   doc.setFontSize(8);
   doc.setFont(undefined, "bold");
-  doc.text("TOTALE", totaleImportoX - 7, totaleY + 3.7, { align: "right" });
+  doc.text("TOTALE", totaleImportoX - 3, totaleY + 3.7, { align: "right" });
   doc.text(formatEuro(totaliPdf.imponibile), totaleX + totaleWidth - 1.2, totaleY + 3.7, { align: "right" });
 
   y = totaleY + totaleHeight + 5;
-  autoTable(doc, {
-    startY: y,
-    body: [
-      ["Lordo", formatEuro(totaliPdf.lordo)],
-      ["Sconto", formatEuro(totaliPdf.sconto)],
-      ["Imponibile", formatEuro(totaliPdf.imponibile)],
-      [`IVA ${formatNumero(totaliPdf.ivaAliquota)}%`, formatEuro(totaliPdf.ivaImporto)],
-      ["Totale complessivo", formatEuro(totaliPdf.totale)],
-    ],
-    theme: "plain",
-    styles: { fontSize: 8, cellPadding: { top: 1, right: 1, bottom: 1, left: 1 } },
-    columnStyles: {
-      0: { halign: "right", fontStyle: "bold", cellWidth: 42 },
-      1: { halign: "right", cellWidth: 30 },
-    },
-    margin: { left: 120, right: 8 },
-    didParseCell: (data) => {
-      if (data.row.index === 4) data.cell.styles.fontStyle = "bold";
-    },
-  });
-  y = doc.lastAutoTable.finalY + 8;
   if (y > 235) {
     doc.addPage();
     y = 20;

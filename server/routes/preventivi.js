@@ -12,7 +12,9 @@ import {
   calcolaImportoRiga,
   calcolaQuantitaRiga,
   calcolaTotaliPreventivo,
+  getTipoRiga,
   getPrezzoUnitarioRiga,
+  isRigaEconomica,
   getScontoRiga,
   normalizzaIvaAliquota,
   numeroPreventivo,
@@ -41,6 +43,10 @@ async function ensurePreventivoRigheSchema() {
     preventivoRigheSchemaPromise = (async () => {
       await query("ALTER TABLE preventivo_righe ADD COLUMN IF NOT EXISTS importo_lordo NUMERIC(12, 2) NOT NULL DEFAULT 0");
       await query("ALTER TABLE preventivo_righe ADD COLUMN IF NOT EXISTS importo NUMERIC(12, 2) NOT NULL DEFAULT 0");
+      await query("ALTER TABLE preventivo_righe ADD COLUMN IF NOT EXISTS tipo_riga TEXT NOT NULL DEFAULT 'ECONOMICA'");
+      await query("ALTER TABLE preventivo_righe ADD COLUMN IF NOT EXISTS ordine_riga INTEGER NOT NULL DEFAULT 0");
+      await query("ALTER TABLE preventivo_righe ADD COLUMN IF NOT EXISTS gruppo_id TEXT");
+      await query("ALTER TABLE preventivo_righe ADD COLUMN IF NOT EXISTS mostra_subtotale_capitolo BOOLEAN NOT NULL DEFAULT FALSE");
       const colonne = await query(
         `SELECT column_name
          FROM information_schema.columns
@@ -326,19 +332,41 @@ async function getRighe(preventivoId) {
          FROM preventivo_righe pr
          LEFT JOIN preventivo_righe_categorie meta ON meta.riga_id = pr.id
          WHERE pr.preventivo_id = $1
-         ORDER BY pr.id ASC`,
+         ORDER BY pr.ordine_riga ASC, pr.id ASC`,
         [preventivoId],
       )
     : await query(
         `SELECT pr.*, 'Edili'::text AS categoria, TRUE AS categoria_bloccata
          FROM preventivo_righe pr
          WHERE pr.preventivo_id = $1
-         ORDER BY pr.id ASC`,
+         ORDER BY pr.ordine_riga ASC, pr.id ASC`,
         [preventivoId],
       );
 
   return result.rows.map((row) => {
     const riga = toCamel(row);
+    const tipoRiga = getTipoRiga(riga);
+
+    if (tipoRiga !== "ECONOMICA") {
+      return {
+        ...riga,
+        tipoRiga,
+        codice: "",
+        categoria: "",
+        unita: "",
+        partiUguali: "",
+        lunghezza: "",
+        larghezza: "",
+        altezzaPeso: "",
+        quantita: "",
+        prezzoUnitario: "",
+        sconto: "",
+        importoLordo: "",
+        importo: "",
+        totale: "",
+      };
+    }
+
     const quantitaCalcolata = calcolaQuantitaRiga(riga);
     const prezzoUnitario = getPrezzoUnitarioRiga(riga);
     const sconto = getScontoRiga(riga);
@@ -348,6 +376,7 @@ async function getRighe(preventivoId) {
 
     return {
       ...riga,
+      tipoRiga,
       quantita: quantitaCalcolata,
       prezzoUnitario,
       sconto,
@@ -367,8 +396,9 @@ async function getPreventivoCompleto(id) {
     preventivo.ivaAliquota ??
     22;
   const righe = await getRighe(id);
-  const lordo = Number(righe.reduce((totale, riga) => totale + numeroPreventivo(riga.importoLordo), 0).toFixed(2));
-  const sconto = Number(righe.reduce(
+  const righeEconomiche = righe.filter(isRigaEconomica);
+  const lordo = Number(righeEconomiche.reduce((totale, riga) => totale + numeroPreventivo(riga.importoLordo), 0).toFixed(2));
+  const sconto = Number(righeEconomiche.reduce(
     (totale, riga) => totale + (numeroPreventivo(riga.importoLordo) - numeroPreventivo(riga.importo)),
     0,
   ).toFixed(2));
@@ -417,6 +447,11 @@ async function aggiornaElencoPrezziDaRighe(righe = []) {
   const righeAggiornate = [];
 
   for (const riga of righe) {
+    if (!isRigaEconomica(riga)) {
+      righeAggiornate.push(riga);
+      continue;
+    }
+
     if (!riga.descrizione || !String(riga.descrizione).trim()) {
       righeAggiornate.push(riga);
       continue;
@@ -497,25 +532,33 @@ async function salvaRighe(preventivoId, righe = []) {
 
   const righeConElencoPrezzi = await aggiornaElencoPrezziDaRighe(righe);
 
-  for (const riga of righeConElencoPrezzi) {
+  for (const [index, riga] of righeConElencoPrezzi.entries()) {
     const valoreMisuraSalvato = (valore) =>
       valore === "" || valore === null || valore === undefined ? 0 : numeroPreventivo(valore);
+    const tipoRiga = getTipoRiga(riga);
+    const ordineRiga = Number.isFinite(Number(riga.ordineRiga ?? riga.ordine_riga))
+      ? Number(riga.ordineRiga ?? riga.ordine_riga)
+      : index;
+    const mostraSubtotaleCapitolo = Boolean(riga.mostraSubtotaleCapitolo ?? riga.mostra_subtotale_capitolo);
+    const descrizione = String(riga.descrizione || "").trim();
+    const gruppoId = riga.gruppoId ?? riga.gruppo_id ?? null;
+    const rigaEconomica = tipoRiga === "ECONOMICA";
     const partiUguali = valoreMisuraSalvato(riga.partiUguali ?? riga.parti_uguali);
     const lunghezza = valoreMisuraSalvato(riga.lunghezza);
     const larghezza = valoreMisuraSalvato(riga.larghezza);
     const altezzaPeso = valoreMisuraSalvato(riga.altezzaPeso ?? riga.altezza_peso);
-    const quantita = calcolaQuantitaRiga({ ...riga, partiUguali, lunghezza, larghezza, altezzaPeso });
-    const prezzoUnitario = getPrezzoUnitarioRiga(riga);
-    const sconto = getScontoRiga(riga);
+    const quantita = rigaEconomica ? calcolaQuantitaRiga({ ...riga, partiUguali, lunghezza, larghezza, altezzaPeso }) : 0;
+    const prezzoUnitario = rigaEconomica ? getPrezzoUnitarioRiga(riga) : 0;
+    const sconto = rigaEconomica ? getScontoRiga(riga) : 0;
     const rigaCalcolata = { ...riga, partiUguali, lunghezza, larghezza, altezzaPeso, quantita, prezzoUnitario, sconto };
-    const importoLordo = calcolaImportoLordoRiga(rigaCalcolata);
-    const totale = calcolaImportoRiga(rigaCalcolata);
+    const importoLordo = rigaEconomica ? calcolaImportoLordoRiga(rigaCalcolata) : 0;
+    const totale = rigaEconomica ? calcolaImportoRiga(rigaCalcolata) : 0;
     const valoriBase = [
       preventivoId,
-      riga.elencoPrezziId || null,
-      riga.codice || null,
-      riga.descrizione,
-      riga.unita || "pz",
+      rigaEconomica ? riga.elencoPrezziId || null : null,
+      rigaEconomica ? riga.codice || null : null,
+      descrizione,
+      rigaEconomica ? riga.unita || "pz" : "",
       partiUguali,
       lunghezza,
       larghezza,
@@ -526,21 +569,25 @@ async function salvaRighe(preventivoId, righe = []) {
       importoLordo,
       totale,
       totale,
+      tipoRiga,
+      ordineRiga,
+      gruppoId,
+      mostraSubtotaleCapitolo,
     ];
 
     if (supportoSchema.categoria && supportoSchema.categoriaBloccata) {
       const inserita = await query(
         `INSERT INTO preventivo_righe
-         (preventivo_id, elenco_prezzi_id, codice, categoria, descrizione, unita, parti_uguali, lunghezza, larghezza, altezza_peso, quantita, prezzo_unitario, sconto, importo_lordo, importo, totale, categoria_bloccata)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+         (preventivo_id, elenco_prezzi_id, codice, categoria, descrizione, unita, parti_uguali, lunghezza, larghezza, altezza_peso, quantita, prezzo_unitario, sconto, importo_lordo, importo, totale, tipo_riga, ordine_riga, gruppo_id, mostra_subtotale_capitolo, categoria_bloccata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
          RETURNING id`,
         [
           preventivoId,
-          riga.elencoPrezziId || null,
-          riga.codice || null,
-          riga.categoria || "Edili",
-          riga.descrizione,
-          riga.unita || "pz",
+          rigaEconomica ? riga.elencoPrezziId || null : null,
+          rigaEconomica ? riga.codice || null : null,
+          rigaEconomica ? riga.categoria || "Edili" : "",
+          descrizione,
+          rigaEconomica ? riga.unita || "pz" : "",
           partiUguali,
           lunghezza,
           larghezza,
@@ -551,6 +598,10 @@ async function salvaRighe(preventivoId, righe = []) {
           importoLordo,
           totale,
           totale,
+          tipoRiga,
+          ordineRiga,
+          gruppoId,
+          mostraSubtotaleCapitolo,
           riga.categoriaBloccata !== false,
         ],
       );
@@ -560,22 +611,22 @@ async function salvaRighe(preventivoId, righe = []) {
            VALUES ($1, $2, $3)
            ON CONFLICT (riga_id)
            DO UPDATE SET categoria = EXCLUDED.categoria, categoria_bloccata = EXCLUDED.categoria_bloccata, updated_at = NOW()`,
-          [inserita.rows[0]?.id, riga.categoria || "Edili", riga.categoriaBloccata !== false],
+          [inserita.rows[0]?.id, rigaEconomica ? riga.categoria || "Edili" : "", riga.categoriaBloccata !== false],
         );
       }
     } else if (supportoSchema.categoria) {
       const inserita = await query(
         `INSERT INTO preventivo_righe
-         (preventivo_id, elenco_prezzi_id, codice, categoria, descrizione, unita, parti_uguali, lunghezza, larghezza, altezza_peso, quantita, prezzo_unitario, sconto, importo_lordo, importo, totale)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+         (preventivo_id, elenco_prezzi_id, codice, categoria, descrizione, unita, parti_uguali, lunghezza, larghezza, altezza_peso, quantita, prezzo_unitario, sconto, importo_lordo, importo, totale, tipo_riga, ordine_riga, gruppo_id, mostra_subtotale_capitolo)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
          RETURNING id`,
         [
           preventivoId,
-          riga.elencoPrezziId || null,
-          riga.codice || null,
-          riga.categoria || "Edili",
-          riga.descrizione,
-          riga.unita || "pz",
+          rigaEconomica ? riga.elencoPrezziId || null : null,
+          rigaEconomica ? riga.codice || null : null,
+          rigaEconomica ? riga.categoria || "Edili" : "",
+          descrizione,
+          rigaEconomica ? riga.unita || "pz" : "",
           partiUguali,
           lunghezza,
           larghezza,
@@ -586,6 +637,10 @@ async function salvaRighe(preventivoId, righe = []) {
           importoLordo,
           totale,
           totale,
+          tipoRiga,
+          ordineRiga,
+          gruppoId,
+          mostraSubtotaleCapitolo,
         ],
       );
       if (supportoSchema.metaCategorie) {
@@ -594,14 +649,14 @@ async function salvaRighe(preventivoId, righe = []) {
            VALUES ($1, $2, $3)
            ON CONFLICT (riga_id)
            DO UPDATE SET categoria = EXCLUDED.categoria, categoria_bloccata = EXCLUDED.categoria_bloccata, updated_at = NOW()`,
-          [inserita.rows[0]?.id, riga.categoria || "Edili", riga.categoriaBloccata !== false],
+          [inserita.rows[0]?.id, rigaEconomica ? riga.categoria || "Edili" : "", riga.categoriaBloccata !== false],
         );
       }
     } else {
       const inserita = await query(
         `INSERT INTO preventivo_righe
-         (preventivo_id, elenco_prezzi_id, codice, descrizione, unita, parti_uguali, lunghezza, larghezza, altezza_peso, quantita, prezzo_unitario, sconto, importo_lordo, importo, totale)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         (preventivo_id, elenco_prezzi_id, codice, descrizione, unita, parti_uguali, lunghezza, larghezza, altezza_peso, quantita, prezzo_unitario, sconto, importo_lordo, importo, totale, tipo_riga, ordine_riga, gruppo_id, mostra_subtotale_capitolo)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
          RETURNING id`,
         valoriBase,
       );
@@ -611,7 +666,7 @@ async function salvaRighe(preventivoId, righe = []) {
            VALUES ($1, $2, $3)
            ON CONFLICT (riga_id)
            DO UPDATE SET categoria = EXCLUDED.categoria, categoria_bloccata = EXCLUDED.categoria_bloccata, updated_at = NOW()`,
-          [inserita.rows[0]?.id, riga.categoria || "Edili", riga.categoriaBloccata !== false],
+          [inserita.rows[0]?.id, rigaEconomica ? riga.categoria || "Edili" : "", riga.categoriaBloccata !== false],
         );
       }
     }
@@ -624,8 +679,9 @@ router.get("/", asyncHandler(async (req, res) => {
   const completi = await Promise.all(
     preventivi.map(async (preventivo) => {
       const righe = await getRighe(preventivo.id);
-      const lordo = Number(righe.reduce((totale, riga) => totale + numeroPreventivo(riga.importoLordo), 0).toFixed(2));
-      const sconto = Number(righe.reduce(
+      const righeEconomiche = righe.filter(isRigaEconomica);
+      const lordo = Number(righeEconomiche.reduce((totale, riga) => totale + numeroPreventivo(riga.importoLordo), 0).toFixed(2));
+      const sconto = Number(righeEconomiche.reduce(
         (totale, riga) => totale + (numeroPreventivo(riga.importoLordo) - numeroPreventivo(riga.importo)),
         0,
       ).toFixed(2));

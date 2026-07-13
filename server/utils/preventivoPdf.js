@@ -5,7 +5,9 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { env } from "../config/env.js";
 import {
+  getTipoRiga,
   getUnitaRiga,
+  isRigaEconomica,
   numeroPreventivo,
 } from "./preventivoCalcoli.js";
 
@@ -214,6 +216,10 @@ function getRigaPdfValori(riga = {}) {
   };
 }
 
+function getDescrizioneRigaPdf(riga = {}) {
+  return String(riga.descrizione || "").trim();
+}
+
 function getTotaliPdf(preventivo = {}) {
   const lordo = numeroCampoApi(preventivo, "lordo", "preventivo");
   const sconto = numeroCampoApi(preventivo, "sconto", "preventivo");
@@ -234,12 +240,21 @@ function getTotaleNettoPdf(preventivo = {}, righe = []) {
 
   return Number(
     (Array.isArray(righe) ? righe : [])
+      .filter(isRigaEconomica)
       .reduce((somma, riga) => somma + getRigaPdfValori(riga).importo, 0)
       .toFixed(2),
   );
 }
 
 function chiaveRigaPdfApi(riga = {}) {
+  if (!isRigaEconomica(riga)) {
+    return [
+      getTipoRiga(riga),
+      getDescrizioneRigaPdf(riga).replace(/\s+/g, " ").toLowerCase(),
+      Boolean(riga.mostraSubtotaleCapitolo ?? riga.mostra_subtotale_capitolo),
+    ].join("|");
+  }
+
   const valori = getRigaPdfValori(riga);
   return [
     String(riga.codice ?? "").trim().toLowerCase(),
@@ -265,6 +280,16 @@ function deduplicaRighePdfApi(righe = []) {
   }
 
   return risultato;
+}
+
+function calcolaSubtotaleCapitoloPdf(righe = [], titoloIndex = 0) {
+  let totale = 0;
+  for (let index = titoloIndex + 1; index < righe.length; index += 1) {
+    const riga = righe[index];
+    if (getTipoRiga(riga) === "TITOLO") break;
+    if (isRigaEconomica(riga)) totale += getRigaPdfValori(riga).importo;
+  }
+  return Number(totale.toFixed(2));
 }
 
 function formatMisuraPdf(riga, campo) {
@@ -337,13 +362,35 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
   y += 5;
 
   const computoRows = [];
+  let titoloSubtotaleAttivo = null;
+  const aggiungiSubtotaleCapitolo = () => {
+    if (titoloSubtotaleAttivo === null) return;
+    const titolo = righe[titoloSubtotaleAttivo];
+    if (titolo?.mostraSubtotaleCapitolo || titolo?.mostra_subtotale_capitolo) {
+      computoRows.push([{ content: `TOTALE CAPITOLO ${formatEuro(calcolaSubtotaleCapitoloPdf(righe, titoloSubtotaleAttivo))}`, colSpan: 9, styles: { fontStyle: "bold", halign: "right", fillColor: [255, 247, 237] } }]);
+    }
+  };
+
   righe.forEach((rigaPdf, index) => {
+    const tipoRiga = getTipoRiga(rigaPdf);
+    if (tipoRiga === "TITOLO") {
+      aggiungiSubtotaleCapitolo();
+      titoloSubtotaleAttivo = index;
+      computoRows.push([{ content: getDescrizioneRigaPdf(rigaPdf), colSpan: 9, styles: { fontStyle: "bold", fontSize: 8.6, fillColor: [255, 247, 237], cellPadding: { top: 3, right: 1, bottom: 2.4, left: 1.5 } } }]);
+      return;
+    }
+    if (tipoRiga === "NOTA") {
+      computoRows.push([{ content: getDescrizioneRigaPdf(rigaPdf), colSpan: 9, styles: { fontStyle: "normal", fontSize: 7.6, fillColor: [248, 250, 252], cellPadding: { top: 2.2, right: 1, bottom: 2.2, left: 1.5 } } }]);
+      return;
+    }
+
     const valori = getRigaPdfValori(rigaPdf);
     computoRows.push(
       [rigaPdf.codice || index + 1, rigaPdf.descrizione || "", formatMisuraPdf(rigaPdf, "partiUguali"), formatMisuraPdf(rigaPdf, "lunghezza"), formatMisuraPdf(rigaPdf, "larghezza"), formatMisuraPdf(rigaPdf, "altezzaPeso"), "", "", ""],
       ["", `SOMMANO a ${getUnitaRiga(rigaPdf)}`, "", "", "", "", formatNumeroConDecimali(valori.quantita), formatEuro(valori.prezzoUnitario), formatEuro(valori.importo)],
     );
   });
+  aggiungiSubtotaleCapitolo();
 
   autoTable(doc, {
     startY: y,
