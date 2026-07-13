@@ -225,6 +225,20 @@ function getTotaliPdf(preventivo = {}) {
   return { lordo, sconto, imponibile, ivaAliquota, ivaImporto, totale };
 }
 
+function getTotaleNettoPdf(preventivo = {}, righe = []) {
+  const imponibile = numeroPreventivo(preventivo.imponibile);
+  if (imponibile > 0) return imponibile;
+
+  const totaleNetto = numeroPreventivo(preventivo.totaleNetto);
+  if (totaleNetto > 0) return totaleNetto;
+
+  return Number(
+    (Array.isArray(righe) ? righe : [])
+      .reduce((somma, riga) => somma + getRigaPdfValori(riga).importo, 0)
+      .toFixed(2),
+  );
+}
+
 function chiaveRigaPdfApi(riga = {}) {
   const valori = getRigaPdfValori(riga);
   return [
@@ -356,35 +370,14 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
     y = 20;
   }
   const totaleY = y + 2;
+  const totaleNettoPdf = getTotaleNettoPdf(preventivo, righe);
   doc.setFillColor(244, 177, 131);
   doc.rect(8, totaleY, 184, 5.2, "FD");
   doc.setFontSize(8);
   doc.setFont(undefined, "bold");
-  doc.text("TOTALE", 164, totaleY + 3.7, { align: "right" });
-  doc.text(formatEuro(totaliPdf.imponibile), 190.8, totaleY + 3.7, { align: "right" });
+  doc.text("TOTALE", 171, totaleY + 3.7, { align: "right" });
+  doc.text(formatEuro(totaleNettoPdf), 190.8, totaleY + 3.7, { align: "right" });
   y = totaleY + 10.2;
-
-  autoTable(doc, {
-    startY: y,
-    body: [
-      ["Lordo", formatEuro(totaliPdf.lordo)],
-      ["Sconto", formatEuro(totaliPdf.sconto)],
-      ["Imponibile", formatEuro(totaliPdf.imponibile)],
-      [`IVA ${formatNumero(totaliPdf.ivaAliquota)}%`, formatEuro(totaliPdf.ivaImporto)],
-      ["Totale complessivo", formatEuro(totaliPdf.totale)],
-    ],
-    theme: "plain",
-    styles: { fontSize: 8, cellPadding: { top: 1, right: 1, bottom: 1, left: 1 } },
-    columnStyles: {
-      0: { halign: "right", fontStyle: "bold", cellWidth: 42 },
-      1: { halign: "right", cellWidth: 30 },
-    },
-    margin: { left: 120, right: 8 },
-    didParseCell: (data) => {
-      if (data.row.index === 4) data.cell.styles.fontStyle = "bold";
-    },
-  });
-  y = doc.lastAutoTable.finalY + 8;
 
   [
     ["CONDIZIONI DI FORNITURA:", [`- Importi IVA esclusa. Aliquota IVA applicata: ${formatNumero(totaliPdf.ivaAliquota)}%`, "- Pagamento: da concordare.", "- Validita offerta: 15 giorni", "- Inizio lavori: da concordare."]],

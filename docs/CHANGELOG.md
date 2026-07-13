@@ -9,6 +9,23 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-13
 
+### Semplificazione riga totale PDF Preventivi
+
+Correzioni:
+
+- Rimossa dal PDF Preventivi la tabella riepilogativa finale con Lordo, Sconto, Imponibile, IVA e Totale complessivo.
+- Mantenuta una sola riga arancione sotto il computo con etichetta TOTALE e importo netto IVA esclusa.
+- Avvicinata la scritta TOTALE all'importo finale, entrambi allineati a destra nella stessa riga.
+
+Test eseguiti:
+
+- Generazione PDF reale con quantita 1, prezzo unitario 1850,00 e totale riga 1850,00.
+- Verifica PDF senza Lordo, Sconto, Imponibile separato, IVA separata e Totale complessivo.
+- Verifica browser del PDF generato.
+- Build frontend completata.
+
+---
+
 ### Allineamento motore PDF ai dati Preventivi
 
 Correzioni:
