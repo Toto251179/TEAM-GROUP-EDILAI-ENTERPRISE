@@ -132,16 +132,28 @@ function formatMisuraPdf(riga, campo) {
 }
 
 function calcolaQuantitaRiga(riga) {
-  const campiMisura = [riga.partiUguali, riga.lunghezza, riga.larghezza, riga.altezzaPeso];
-  const usaMisure = campiMisura.some((valore) => valore !== undefined && valore !== "" && numeroPreventivo(valore) !== 0);
+  const partiUguali = numeroPreventivo(riga.partiUguali ?? riga.parti_uguali);
+  const lunghezza = numeroPreventivo(riga.lunghezza);
+  const larghezza = numeroPreventivo(riga.larghezza);
+  const altezzaPeso = numeroPreventivo(riga.altezzaPeso ?? riga.altezza_peso);
+  const quantitaEsplicita = numeroPreventivo(riga.quantita ?? riga.quantity ?? riga.qty ?? riga.qta);
+  const haDimensioniReali = lunghezza > 0 || larghezza > 0 || altezzaPeso > 0 || partiUguali > 1;
 
-  if (!usaMisure) return numeroPreventivo(riga.quantita);
+  const prodottoMisure = () => Number(
+    [partiUguali, lunghezza, larghezza, altezzaPeso]
+      .map((valore) => (valore > 0 ? valore : 1))
+      .reduce((prodotto, valore) => prodotto * valore, 1)
+      .toFixed(2),
+  );
 
-  const [partiUguali, lunghezza, larghezza, altezzaPeso] = campiMisura.map((valore) => {
-    const numero = numeroPreventivo(valore);
-    return numero > 0 ? numero : 1;
-  });
-  return Number((partiUguali * lunghezza * larghezza * altezzaPeso).toFixed(2));
+  if (haDimensioniReali) return prodottoMisure();
+  if (quantitaEsplicita > 0) return Number(quantitaEsplicita.toFixed(2));
+  if ([partiUguali, lunghezza, larghezza, altezzaPeso].some((valore) => valore > 0)) return prodottoMisure();
+
+  const unita = String(riga.unita ?? riga.unitaMisura ?? riga.um ?? "").trim().toLowerCase();
+  if (unita.includes("corpo") || unita === "cad" || unita === "pz") return 1;
+
+  return 0;
 }
 
 function calcolaLordoRiga(riga) {
@@ -248,18 +260,18 @@ function normalizzaRiga(riga) {
     categoria: riga.categoria || "Edili",
     categoriaBloccata: riga.categoriaBloccata !== false,
     categoriaModificataManualmente: Boolean(riga.categoriaModificataManualmente),
-    partiUguali: riga.partiUguali === "" || riga.partiUguali === null || riga.partiUguali === undefined ? "" : Number(riga.partiUguali),
-    lunghezza: riga.lunghezza === "" || riga.lunghezza === null || riga.lunghezza === undefined ? "" : Number(riga.lunghezza),
-    larghezza: riga.larghezza === "" || riga.larghezza === null || riga.larghezza === undefined ? "" : Number(riga.larghezza),
-    altezzaPeso: riga.altezzaPeso === "" || riga.altezzaPeso === null || riga.altezzaPeso === undefined ? "" : Number(riga.altezzaPeso),
+    partiUguali: riga.partiUguali === "" || riga.partiUguali === null || riga.partiUguali === undefined ? "" : numeroPreventivo(riga.partiUguali),
+    lunghezza: riga.lunghezza === "" || riga.lunghezza === null || riga.lunghezza === undefined ? "" : numeroPreventivo(riga.lunghezza),
+    larghezza: riga.larghezza === "" || riga.larghezza === null || riga.larghezza === undefined ? "" : numeroPreventivo(riga.larghezza),
+    altezzaPeso: riga.altezzaPeso === "" || riga.altezzaPeso === null || riga.altezzaPeso === undefined ? "" : numeroPreventivo(riga.altezzaPeso),
   };
   const quantita = calcolaQuantitaRiga(rigaConMisure);
 
   return {
     ...rigaConMisure,
     quantita,
-    prezzoUnitario: Number(riga.prezzoUnitario || 0),
-    sconto: Number(riga.sconto || 0),
+    prezzoUnitario: numeroPreventivo(riga.prezzoUnitario ?? riga.prezzo_unitario ?? riga.prezzo),
+    sconto: numeroPreventivo(riga.sconto),
     totale: calcolaImportoRiga({ ...rigaConMisure, quantita }),
   };
 }
@@ -892,8 +904,9 @@ function Preventivi() {
     }
   };
   const apriPdfHttp = async (preventivo, nuovaScheda = null) => {
-    const endpoint = backendUrl(`/api/preventivi/${preventivo.id}/pdf`);
-    const response = await fetch(endpoint, { method: "HEAD" });
+    const endpointBase = backendUrl(`/api/preventivi/${preventivo.id}/pdf`);
+    const endpoint = `${endpointBase}?v=${Date.now()}`;
+    const response = await fetch(endpoint, { method: "HEAD", cache: "no-store" });
     if (!response.ok) {
       throw new Error("Il file PDF non e disponibile. Rigenerare il preventivo.");
     }

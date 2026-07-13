@@ -8,6 +8,13 @@ import { query } from "../config/db.js";
 import { createCrudRepository } from "../utils/crud.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { archiviaPdfPreventivo, assicuraCartellaPreventiviCliente, trovaPdfPreventivoArchiviato } from "../utils/preventivoPdf.js";
+import {
+  calcolaImportoRiga,
+  calcolaQuantitaRiga,
+  getPrezzoUnitarioRiga,
+  getScontoRiga,
+  numeroPreventivo,
+} from "../utils/preventivoCalcoli.js";
 
 const repository = createCrudRepository({
   table: "preventivi",
@@ -307,7 +314,20 @@ async function getRighe(preventivoId) {
         [preventivoId],
       );
 
-  return result.rows.map(toCamel);
+  return result.rows.map((row) => {
+    const riga = toCamel(row);
+    const quantitaCalcolata = calcolaQuantitaRiga(riga);
+    const prezzoUnitario = getPrezzoUnitarioRiga(riga);
+    const sconto = getScontoRiga(riga);
+
+    return {
+      ...riga,
+      quantita: quantitaCalcolata,
+      prezzoUnitario,
+      sconto,
+      totale: calcolaImportoRiga({ ...riga, quantita: quantitaCalcolata, prezzoUnitario, sconto }),
+    };
+  });
 }
 
 async function getPreventivoCompleto(id) {
@@ -362,7 +382,7 @@ async function aggiornaElencoPrezziDaRighe(righe = []) {
     }
 
     const codice = generaCodiceElencoPrezzi(riga);
-    const prezzoUnitario = Number(riga.prezzoUnitario || 0);
+    const prezzoUnitario = getPrezzoUnitarioRiga(riga);
     const descrizione = String(riga.descrizione).trim();
     const unita = riga.unita || "pz";
     const categoria = riga.categoria || classificaCategoria(riga);
@@ -438,18 +458,15 @@ async function salvaRighe(preventivoId, righe = []) {
 
   for (const riga of righeConElencoPrezzi) {
     const valoreMisuraSalvato = (valore) =>
-      valore === "" || valore === null || valore === undefined ? 0 : Number(valore || 0);
-    const fattoreMisura = (valore) => (Number(valore || 0) === 0 ? 1 : Number(valore));
-    const partiUguali = valoreMisuraSalvato(riga.partiUguali);
+      valore === "" || valore === null || valore === undefined ? 0 : numeroPreventivo(valore);
+    const partiUguali = valoreMisuraSalvato(riga.partiUguali ?? riga.parti_uguali);
     const lunghezza = valoreMisuraSalvato(riga.lunghezza);
     const larghezza = valoreMisuraSalvato(riga.larghezza);
-    const altezzaPeso = valoreMisuraSalvato(riga.altezzaPeso);
-    const quantitaCalcolata =
-      fattoreMisura(partiUguali) * fattoreMisura(lunghezza) * fattoreMisura(larghezza) * fattoreMisura(altezzaPeso);
-    const quantita = Number(riga.quantita || quantitaCalcolata || 0);
-    const prezzoUnitario = Number(riga.prezzoUnitario || 0);
-    const sconto = Number(riga.sconto || 0);
-    const totale = Number((quantita * prezzoUnitario * (1 - sconto / 100)).toFixed(2));
+    const altezzaPeso = valoreMisuraSalvato(riga.altezzaPeso ?? riga.altezza_peso);
+    const quantita = calcolaQuantitaRiga({ ...riga, partiUguali, lunghezza, larghezza, altezzaPeso });
+    const prezzoUnitario = getPrezzoUnitarioRiga(riga);
+    const sconto = getScontoRiga(riga);
+    const totale = calcolaImportoRiga({ ...riga, partiUguali, lunghezza, larghezza, altezzaPeso, quantita, prezzoUnitario, sconto });
     const valoriBase = [
       preventivoId,
       riga.elencoPrezziId || null,
@@ -576,12 +593,7 @@ router.post("/", asyncHandler(async (req, res) => {
   const righe = Array.isArray(req.body.righe) ? req.body.righe : [];
   const payload = await normalizzaPayloadClientePreventivo(req.body, { clienteObbligatorio: true });
   const importo = righe.length
-    ? righe.reduce((totale, riga) => {
-        const quantita = Number(riga.quantita || 0);
-        const prezzoUnitario = Number(riga.prezzoUnitario || 0);
-        const sconto = Number(riga.sconto || 0);
-        return totale + quantita * prezzoUnitario * (1 - sconto / 100);
-      }, 0)
+    ? righe.reduce((totale, riga) => totale + calcolaImportoRiga(riga), 0)
     : Number(req.body.importo || 0);
 
   const preventivo = await repository.create({
@@ -604,12 +616,7 @@ router.put("/:id", asyncHandler(async (req, res) => {
   if (righe) {
     payload.importo = Number(
       righe
-        .reduce((totale, riga) => {
-          const quantita = Number(riga.quantita || 0);
-          const prezzoUnitario = Number(riga.prezzoUnitario || 0);
-          const sconto = Number(riga.sconto || 0);
-          return totale + quantita * prezzoUnitario * (1 - sconto / 100);
-        }, 0)
+        .reduce((totale, riga) => totale + calcolaImportoRiga(riga), 0)
         .toFixed(2),
     );
   }
@@ -676,6 +683,9 @@ router.get("/:id/pdf", asyncHandler(async (req, res) => {
     filePath: pdfPath,
     size: stat.size,
   });
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="${archivio.fileName.replaceAll('"', "")}"`);
   res.setHeader("Content-Length", String(stat.size));
@@ -696,6 +706,9 @@ router.head("/:id/pdf", asyncHandler(async (req, res) => {
   const stat = await fs.stat(pdfPath);
   if (!stat.isFile() || stat.size <= 0) return res.status(404).end();
 
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="${archivio.fileName.replaceAll('"', "")}"`);
   res.setHeader("Content-Length", String(stat.size));
@@ -753,44 +766,18 @@ router.post("/:id/pdf", asyncHandler(async (req, res) => {
       },
     });
   } catch (error) {
-    const pdfEsistente = await trovaPdfPreventivoArchiviato(preventivo, cliente ? [cliente] : undefined).catch(() => null);
-    if ((error.code === "EBUSY" || error.code === "EACCES") && pdfEsistente?.exists) {
-      const pdfPath = pdfEsistente.filePath;
-      console.log("pdfPath", pdfPath);
-      console.log("fs.existsSync(pdfPath)", fsSync.existsSync(pdfPath));
-      const stat = await fs.stat(pdfPath);
-      if (stat.isFile() && stat.size > 0) {
-        console.warn("PDF preventivo esistente usato per file bloccato", {
-          status: 200,
-          endpoint,
-          fileName: pdfEsistente.fileName,
-          filePath: pdfPath,
-          size: stat.size,
-          error: error.message,
-        });
-        return res.json({
-          success: true,
-          message: "PDF generato e aperto",
-          pdfUrl: endpoint,
-          filename: pdfEsistente.fileName,
-          size: stat.size,
-          archivio: {
-            fileName: pdfEsistente.fileName,
-            folderPath: pdfEsistente.folderPath,
-          },
-        });
-      }
-    }
     console.error("Errore generazione PDF preventivo", {
-      status: 500,
+      status: error.code === "EBUSY" || error.code === "EACCES" ? 409 : 500,
       endpoint,
       fileName: archivio?.fileName,
       filePath: archivio?.filePath,
       error: error.message,
     });
-    return res.status(500).json({
-      code: "ERRORE_GENERAZIONE_PDF",
-      message: "Errore generazione PDF",
+    return res.status(error.code === "EBUSY" || error.code === "EACCES" ? 409 : 500).json({
+      code: error.code === "EBUSY" || error.code === "EACCES" ? "PDF_IN_USO" : "ERRORE_GENERAZIONE_PDF",
+      message: error.code === "EBUSY" || error.code === "EACCES"
+        ? "Il PDF e aperto in un altro programma. Chiudilo e riprova."
+        : "Errore generazione PDF",
       errore: error.message,
       filename: archivio?.fileName,
     });

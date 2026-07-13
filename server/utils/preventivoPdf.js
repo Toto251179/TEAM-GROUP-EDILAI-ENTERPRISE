@@ -4,6 +4,15 @@ import os from "node:os";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { env } from "../config/env.js";
+import {
+  calcolaImportoRiga,
+  calcolaQuantitaRiga,
+  deduplicaRighePdf,
+  getPrezzoUnitarioRiga,
+  getUnitaRiga,
+  normalizzaIvaAliquota,
+  numeroPreventivo,
+} from "./preventivoCalcoli.js";
 
 const rootDir = process.cwd();
 
@@ -187,35 +196,21 @@ function getOggettoPreventivo(preventivo) {
   return String(preventivo.descrizione || preventivo.oggetto || "Preventivo").trim();
 }
 
-function calcolaQuantitaRiga(riga) {
-  const campiMisura = [riga.partiUguali, riga.lunghezza, riga.larghezza, riga.altezzaPeso];
-  const usaMisure = campiMisura.some((valore) => valore !== undefined && valore !== "" && Number(valore || 0) !== 0);
-  if (!usaMisure) return Number(riga.quantita || 0);
-  const [partiUguali, lunghezza, larghezza, altezzaPeso] = campiMisura.map((valore) => Number(valore || 1));
-  return Number((partiUguali * lunghezza * larghezza * altezzaPeso).toFixed(2));
-}
-
-function calcolaImportoRiga(riga) {
-  const quantita = calcolaQuantitaRiga(riga);
-  const prezzoUnitario = Number(riga.prezzoUnitario || 0);
-  const sconto = Number(riga.sconto || 0);
-  return Number((quantita * prezzoUnitario * (1 - sconto / 100)).toFixed(2));
-}
-
 function calcolaTotali(righe = [], ivaAliquota = 22) {
   const imponibile = Number(righe.reduce((totale, riga) => totale + calcolaImportoRiga(riga), 0).toFixed(2));
-  const aliquota = Number.isFinite(Number(ivaAliquota)) ? Number(ivaAliquota) : 22;
+  const aliquota = normalizzaIvaAliquota(ivaAliquota, 22);
   return { imponibile, ivaAliquota: aliquota };
 }
 
 function formatMisuraPdf(riga, campo) {
-  const valoriMisura = ["partiUguali", "lunghezza", "larghezza", "altezzaPeso"].map((nomeCampo) => riga[nomeCampo]);
-  const sonoTuttiUno = valoriMisura.every((valore) => Number(valore || 0) === 1);
-  if (riga[campo] === "" || riga[campo] === null || riga[campo] === undefined) return "";
-  if (Number(riga[campo] || 0) === 0) return "";
-  if (sonoTuttiUno) return "";
-  if (campo !== "partiUguali" && Number(riga[campo] || 0) === 1) return "";
-  return campo === "partiUguali" ? formatNumero(riga[campo]) : formatNumeroConDecimali(riga[campo]);
+  const valoriMisura = ["partiUguali", "lunghezza", "larghezza", "altezzaPeso"].map((nomeCampo) =>
+    numeroPreventivo(riga[nomeCampo] ?? riga[nomeCampo.replace(/[A-Z]/g, (lettera) => `_${lettera.toLowerCase()}`)]),
+  );
+  const valore = numeroPreventivo(riga[campo] ?? riga[campo.replace(/[A-Z]/g, (lettera) => `_${lettera.toLowerCase()}`)]);
+  const sonoTuttiUno = valoriMisura.every((item) => item === 1);
+  if (valore === 0 || sonoTuttiUno) return "";
+  if (campo !== "partiUguali" && valore === 1) return "";
+  return campo === "partiUguali" ? formatNumero(valore) : formatNumeroConDecimali(valore);
 }
 
 async function caricaLogoDataUrl() {
@@ -249,7 +244,7 @@ function disegnaRiquadroClienteCode(doc, clienteCode) {
 
 export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []) {
   const doc = new jsPDF();
-  const righe = preventivo.righe || [];
+  const righe = deduplicaRighePdf(preventivo.righe || []);
   const totaliPdf = calcolaTotali(righe, preventivo.ivaAliquota);
   let y = 18;
 
@@ -280,7 +275,7 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
   righe.forEach((rigaPdf, index) => {
     computoRows.push(
       [rigaPdf.codice || index + 1, rigaPdf.descrizione || "", formatMisuraPdf(rigaPdf, "partiUguali"), formatMisuraPdf(rigaPdf, "lunghezza"), formatMisuraPdf(rigaPdf, "larghezza"), formatMisuraPdf(rigaPdf, "altezzaPeso"), "", "", ""],
-      ["", `SOMMANO a ${rigaPdf.unita || ""}`, "", "", "", "", formatNumeroConDecimali(calcolaQuantitaRiga(rigaPdf)), formatEuro(rigaPdf.prezzoUnitario), formatEuro(calcolaImportoRiga(rigaPdf))],
+      ["", `SOMMANO a ${getUnitaRiga(rigaPdf)}`, "", "", "", "", formatNumeroConDecimali(calcolaQuantitaRiga(rigaPdf)), formatEuro(getPrezzoUnitarioRiga(rigaPdf)), formatEuro(calcolaImportoRiga(rigaPdf))],
     );
   });
 

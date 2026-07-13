@@ -3,6 +3,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import {
+  calcolaImportoRiga,
+  calcolaQuantitaRiga,
+  deduplicaRighePdf,
+  getPrezzoUnitarioRiga,
+  getUnitaRiga,
+  normalizzaIvaAliquota,
+  numeroPreventivo,
+} from "../server/utils/preventivoCalcoli.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -127,37 +136,24 @@ function disegnaRiquadroClienteCode(doc, clienteCode) {
   doc.text(String(clienteCode), x + width / 2, y + height / 2 + 1, { align: "center" });
 }
 
-function calcolaQuantitaRiga(riga) {
-  const campiMisura = [riga.partiUguali, riga.lunghezza, riga.larghezza, riga.altezzaPeso];
-  const usaMisure = campiMisura.some((valore) => valore !== undefined && valore !== "" && Number(valore || 0) !== 0);
-  if (!usaMisure) return Number(riga.quantita || 0);
-  const [partiUguali, lunghezza, larghezza, altezzaPeso] = campiMisura.map((valore) => Number(valore || 1));
-  return Number((partiUguali * lunghezza * larghezza * altezzaPeso).toFixed(2));
-}
-
-function calcolaImportoRiga(riga) {
-  const quantita = calcolaQuantitaRiga(riga);
-  const prezzoUnitario = Number(riga.prezzoUnitario || 0);
-  const sconto = Number(riga.sconto || 0);
-  return Number((quantita * prezzoUnitario * (1 - sconto / 100)).toFixed(2));
-}
-
 function calcolaTotali(righe = [], ivaAliquota = 22) {
   const imponibile = Number(righe.reduce((totale, riga) => totale + calcolaImportoRiga(riga), 0).toFixed(2));
-  const aliquota = Number.isFinite(Number(ivaAliquota)) ? Number(ivaAliquota) : 22;
+  const aliquota = normalizzaIvaAliquota(ivaAliquota, 22);
   const iva = Number((imponibile * (aliquota / 100)).toFixed(2));
   return { imponibile, ivaAliquota: aliquota, totale: Number((imponibile + iva).toFixed(2)) };
 }
 
 function formatMisuraPdf(riga, campo) {
-  const campiMisura = ["partiUguali", "lunghezza", "larghezza", "altezzaPeso"];
-  const valoriMisura = campiMisura.map((nomeCampo) => riga[nomeCampo]);
-  const sonoTuttiUno = valoriMisura.every((valore) => Number(valore || 0) === 1);
-  if (riga[campo] === "" || riga[campo] === null || riga[campo] === undefined) return "";
-  if (Number(riga[campo] || 0) === 0) return "";
-  if (sonoTuttiUno) return "";
-  if (campo !== "partiUguali" && Number(riga[campo] || 0) === 1) return "";
-  return campo === "partiUguali" ? formatNumero(riga[campo]) : formatNumeroConDecimali(riga[campo]);
+  const snakeCampo = campo.replace(/[A-Z]/g, (lettera) => `_${lettera.toLowerCase()}`);
+  const valore = numeroPreventivo(riga[campo] ?? riga[snakeCampo]);
+  const valoriMisura = ["partiUguali", "lunghezza", "larghezza", "altezzaPeso"].map((nomeCampo) => {
+    const snakeNome = nomeCampo.replace(/[A-Z]/g, (lettera) => `_${lettera.toLowerCase()}`);
+    return numeroPreventivo(riga[nomeCampo] ?? riga[snakeNome]);
+  });
+  const sonoTuttiUno = valoriMisura.every((item) => item === 1);
+  if (valore === 0 || sonoTuttiUno) return "";
+  if (campo !== "partiUguali" && valore === 1) return "";
+  return campo === "partiUguali" ? formatNumero(valore) : formatNumeroConDecimali(valore);
 }
 
 async function caricaLogoDataUrl() {
@@ -196,7 +192,7 @@ async function disegnaLogo(doc, y) {
 
 async function generaPdf(preventivo, clientiArchivio = []) {
   const doc = new jsPDF();
-  const righe = preventivo.righe || [];
+  const righe = deduplicaRighePdf(preventivo.righe || []);
   const totaliPdf = calcolaTotali(righe, preventivo.ivaAliquota);
   let y = 18;
 
@@ -232,7 +228,7 @@ async function generaPdf(preventivo, clientiArchivio = []) {
   const computoRows = [];
   righe.forEach((rigaPdf, index) => {
     const quantita = formatNumeroConDecimali(calcolaQuantitaRiga(rigaPdf));
-    const prezzo = formatEuro(rigaPdf.prezzoUnitario);
+    const prezzo = formatEuro(getPrezzoUnitarioRiga(rigaPdf));
     const importo = formatEuro(calcolaImportoRiga(rigaPdf));
     computoRows.push(
       [
@@ -246,7 +242,7 @@ async function generaPdf(preventivo, clientiArchivio = []) {
         "",
         "",
       ],
-      ["", `SOMMANO a ${rigaPdf.unita || ""}`, "", "", "", "", quantita, prezzo, importo],
+      ["", `SOMMANO a ${getUnitaRiga(rigaPdf)}`, "", "", "", "", quantita, prezzo, importo],
     );
   });
 

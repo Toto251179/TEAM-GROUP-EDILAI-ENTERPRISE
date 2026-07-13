@@ -9,6 +9,29 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-13
 
+### Correzione PDF Preventivi: quantita, importi e cache
+
+Correzioni:
+
+- Normalizzati numeri italiani con virgola per quantita, prezzi e sconti.
+- Corretto il calcolo PDF quando `partiUguali` vale 1 ma la quantita esplicita e diversa.
+- Aggiunto recupero della quantita da misure, totale/prezzo e unita a corpo.
+- Eliminata dal PDF la ripetizione consecutiva della stessa riga identica.
+- Disabilitata la cache del PDF e aggiunto un parametro univoco all'apertura.
+- Rimossa la risposta ingannevole che riapriva un PDF vecchio quando il file era bloccato.
+
+Test eseguiti:
+
+- Quantita 1 x 130,53 euro = 130,53 euro.
+- Quantita 2,50 x 100,00 euro = 250,00 euro.
+- Quantita 25 con `partiUguali` 1 mantenuta a 25.
+- Riga duplicata consecutiva ridotta a una sola riga nel PDF.
+- PDF di prova generato e verificato.
+- Build frontend completata.
+- Lint globale ancora bloccato da errori preesistenti fuori dal modulo Preventivi.
+
+---
+
 ### Correzione azioni Clienti e cartella esterna
 
 Correzioni:
