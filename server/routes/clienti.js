@@ -1,7 +1,10 @@
 import { Router } from "express";
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { pool, query } from "../config/db.js";
+import { env } from "../config/env.js";
 import { createCrudRepository } from "../utils/crud.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
@@ -36,6 +39,7 @@ const repository = createCrudRepository({
 });
 
 const router = Router();
+const SOTTOCARTELLE_CLIENTE = ["PREVENTIVI", "CANTIERI", "CHIAMATE", "RAPPORTINI", "FOTO", "DOCUMENTI"];
 
 function toCamel(row) {
   return Object.fromEntries(
@@ -80,6 +84,123 @@ function clienteResponse(cliente) {
     indirizzo: via,
     noteCliente,
     note: noteCliente,
+  };
+}
+
+function safeFolderName(name) {
+  return String(name || "")
+    .replace(/[<>:"/\\|?*]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[. ]+$/g, "");
+}
+
+function abbreviaPercorso(percorso) {
+  const home = os.homedir();
+  return percorso && percorso.startsWith(home) ? percorso.replace(home, "~") : percorso;
+}
+
+async function pathExists(targetPath) {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function leggiPercorsoArchivioConfigurato() {
+  let archivePath = "";
+  try {
+    const result = await query("SELECT data->>'archivePath' AS archive_path FROM system_settings WHERE id = $1", ["system"]);
+    archivePath = String(result.rows[0]?.archive_path || "").trim();
+  } catch (error) {
+    if (error.code !== "42P01") throw error;
+  }
+
+  const home = os.homedir();
+  const oneDrive = process.env.OneDrive || process.env.OneDriveCommercial || process.env.OneDriveConsumer;
+  const candidati = [
+    archivePath,
+    process.env.PREVENTIVI_OUTPUT_DIR,
+    env.preventivi.outputDir,
+    path.join(home, "Desktop", "PREVENTIVI TEAM GROUP"),
+    oneDrive ? path.join(oneDrive, "Desktop", "PREVENTIVI TEAM GROUP") : "",
+  ]
+    .filter(Boolean)
+    .filter((item) => !String(item).includes("<UTENTE>"))
+    .map((item) => path.resolve(item));
+
+  const unici = [...new Set(candidati)];
+  if (!unici.length) return "";
+
+  for (const candidato of unici) {
+    if (await pathExists(candidato)) return candidato;
+  }
+
+  return unici[0];
+}
+
+async function trovaCartellaCliente(clientiRoot, idClienteSafe) {
+  try {
+    const entries = await fs.readdir(clientiRoot, { withFileTypes: true });
+    return entries.find((entry) => entry.isDirectory() && entry.name.toUpperCase().startsWith(`${idClienteSafe.toUpperCase()} - `))?.name || "";
+  } catch (error) {
+    if (error.code === "ENOENT") return "";
+    throw error;
+  }
+}
+
+async function risolviCartellaCliente(cliente, { crea = false, apri = false } = {}) {
+  const archiveRoot = await leggiPercorsoArchivioConfigurato();
+  if (!archiveRoot) {
+    throw creaErroreCliente(400, "Cartella archivio non configurata.", "archivePath", "ARCHIVIO_NON_CONFIGURATO");
+  }
+
+  const idCliente = cliente.idCliente || cliente.clienteCode || "";
+  const ragioneSociale = cliente.ragioneSociale || "";
+  const idClienteSafe = safeFolderName(idCliente);
+  const ragioneSocialeSafe = safeFolderName(ragioneSociale);
+  if (!idClienteSafe || !ragioneSocialeSafe) {
+    throw creaErroreCliente(400, "ID Cliente e ragione sociale sono obbligatori per la cartella archivio.", "id_cliente", "CLIENTE_ARCHIVIO_DATI_MANCANTI");
+  }
+
+  const clientiRoot = path.join(archiveRoot, "CLIENTI");
+  const nomeCartella = `${idClienteSafe} - ${ragioneSocialeSafe}`;
+  const esistente = await trovaCartellaCliente(clientiRoot, idClienteSafe);
+  const folderPath = path.join(clientiRoot, esistente || nomeCartella);
+  const existsBefore = Boolean(esistente) || await pathExists(folderPath);
+
+  if (crea) {
+    await fs.mkdir(folderPath, { recursive: true });
+    await Promise.all(SOTTOCARTELLE_CLIENTE.map((nome) => fs.mkdir(path.join(folderPath, nome), { recursive: true })));
+  }
+
+  const existsAfter = await pathExists(folderPath);
+  let apertura = false;
+  if (apri) {
+    if (!existsAfter) {
+      throw creaErroreCliente(404, "Cartella cliente non trovata.", "folderPath", "CARTELLA_CLIENTE_NON_TROVATA", { folderPath });
+    }
+    if (process.platform !== "win32") {
+      throw creaErroreCliente(500, "Apertura cartella disponibile solo su desktop Windows.", "folderPath", "APERTURA_CARTELLA_NON_SUPPORTATA", { folderPath });
+    }
+    spawn("explorer.exe", [folderPath], { detached: true, stdio: "ignore" }).unref();
+    apertura = true;
+  }
+
+  return {
+    archiveRoot,
+    clientiRoot,
+    folderName: path.basename(folderPath),
+    folderPath,
+    percorsoAbbreviato: abbreviaPercorso(folderPath),
+    exists: existsAfter,
+    created: crea && !existsBefore,
+    found: existsBefore,
+    opened: apertura,
+    status: existsAfter ? "Cartella collegata" : "Cartella non trovata",
+    subfolders: SOTTOCARTELLE_CLIENTE,
   };
 }
 
@@ -460,6 +581,32 @@ router.get("/:id", asyncHandler(async (req, res) => {
   const item = await repository.findById(req.params.id);
   if (!item) return res.status(404).json({ message: "Cliente non trovato" });
   res.json((await aggiungiIndirizzi([clienteResponse(item)]))[0]);
+}));
+
+router.get("/:id/cartella", asyncHandler(async (req, res) => {
+  const item = await repository.findById(req.params.id);
+  if (!item) return res.status(404).json({ message: "Cliente non trovato" });
+  res.json(await risolviCartellaCliente(clienteResponse(item), { crea: false, apri: false }));
+}));
+
+router.post("/:id/crea-cartella", asyncHandler(async (req, res) => {
+  const item = await repository.findById(req.params.id);
+  if (!item) return res.status(404).json({ message: "Cliente non trovato" });
+  const archivio = await risolviCartellaCliente(clienteResponse(item), { crea: true, apri: false });
+  res.status(archivio.created ? 201 : 200).json({
+    message: archivio.created ? "Cartella cliente creata." : "Cartella cliente già presente.",
+    archivio,
+  });
+}));
+
+router.post("/:id/apri-cartella", asyncHandler(async (req, res) => {
+  const item = await repository.findById(req.params.id);
+  if (!item) return res.status(404).json({ message: "Cliente non trovato" });
+  const archivio = await risolviCartellaCliente(clienteResponse(item), { crea: true, apri: true });
+  res.json({
+    message: archivio.created ? "Cartella cliente creata e aperta." : "Cartella cliente aperta.",
+    archivio,
+  });
 }));
 
 router.post("/import-excel", asyncHandler(async (req, res) => {

@@ -9,6 +9,28 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-13
 
+### Correzione azioni Clienti e cartella esterna
+
+Correzioni:
+
+- Corrette le azioni dell'Elenco Clienti in base alla funzione reale.
+- Nuovo Preventivo apre la creazione preventivo collegata al cliente.
+- Nuovo Cantiere crea un cantiere collegato al cliente.
+- Aggiunto collegamento alla cartella esterna cliente da backend Windows.
+- Consolidate Apri scheda cliente ed Elimina nel menu Altro.
+
+Test eseguiti:
+
+- Verifica assenza diciture errate Nuovo trattamento e Nuovo impiego.
+- Verifica pulsanti Modifica, Nuovo Preventivo, Nuovo Cantiere, Apri Cartella.
+- Verifica menu Altro con Apri scheda cliente ed Elimina.
+- Verifica creazione/trovamento cartella cliente e sottocartelle.
+- Verifica apertura cartella via backend.
+- Browser test pagina /clienti senza errori console.
+- Build frontend completata.
+
+---
+
 ### Restyling Elenco Cantieri
 
 Modifiche:

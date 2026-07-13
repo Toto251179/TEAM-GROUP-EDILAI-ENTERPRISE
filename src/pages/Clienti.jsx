@@ -60,6 +60,9 @@ function Clienti() {
   const [messaggio, setMessaggio] = useState("");
   const [importazione, setImportazione] = useState(null);
   const [fileImport, setFileImport] = useState(null);
+  const [menuAltroClienteId, setMenuAltroClienteId] = useState(null);
+  const [cartelleClienti, setCartelleClienti] = useState({});
+  const [cartellaForm, setCartellaForm] = useState(null);
 
   useEffect(() => {
     let componenteAttivo = true;
@@ -165,6 +168,7 @@ function Clienti() {
 
   const resetForm = () => {
     setForm(clienteVuoto);
+    setCartellaForm(null);
     setErrore("");
   };
 
@@ -249,6 +253,7 @@ function Clienti() {
     });
     setErrore("");
     setMessaggio("");
+    verificaCartellaCliente(cliente);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -267,6 +272,63 @@ function Clienti() {
     } catch (error) {
       setErrore(error.message);
     }
+  };
+
+  const aggiornaInfoCartellaCliente = (cliente, info) => {
+    setCartelleClienti((corrente) => ({ ...corrente, [cliente.id]: info }));
+    if (form.id === cliente.id || cliente.id === info?.clienteId) setCartellaForm(info);
+  };
+
+  const verificaCartellaCliente = async (cliente) => {
+    try {
+      const info = await api.get(`/clienti/${cliente.id}/cartella`);
+      aggiornaInfoCartellaCliente(cliente, { ...info, clienteId: cliente.id });
+      return info;
+    } catch (error) {
+      const info = {
+        clienteId: cliente.id,
+        status: error.status === 400 ? "Percorso non configurato" : "Errore di accesso",
+        message: error.message,
+      };
+      aggiornaInfoCartellaCliente(cliente, info);
+      return info;
+    }
+  };
+
+  const creaCartellaCliente = async (cliente) => {
+    setErrore("");
+    setMessaggio("");
+
+    try {
+      const response = await api.post(`/clienti/${cliente.id}/crea-cartella`, {});
+      aggiornaInfoCartellaCliente(cliente, { ...response.archivio, clienteId: cliente.id });
+      setMessaggio(`${response.message} ${response.archivio?.folderPath || ""}`.trim());
+      return response;
+    } catch (error) {
+      setErrore(error.message);
+      return null;
+    }
+  };
+
+  const apriCartellaCliente = async (cliente) => {
+    setMenuAltroClienteId(null);
+    setErrore("");
+    setMessaggio("");
+
+    try {
+      const response = await api.post(`/clienti/${cliente.id}/apri-cartella`, {});
+      aggiornaInfoCartellaCliente(cliente, { ...response.archivio, clienteId: cliente.id });
+      setMessaggio(`${response.message} ${response.archivio?.folderPath || ""}`.trim());
+      return response;
+    } catch (error) {
+      setErrore(error.message);
+      return null;
+    }
+  };
+
+  const apriSchedaCliente = (cliente) => {
+    setMenuAltroClienteId(null);
+    modificaCliente(cliente);
   };
 
   const creaPreventivoCliente = (cliente) => {
@@ -376,6 +438,22 @@ function Clienti() {
     boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
   };
 
+  const actionButton = {
+    height: "34px",
+    minWidth: "128px",
+    padding: "0 12px",
+    borderRadius: "6px",
+    whiteSpace: "nowrap",
+  };
+
+  const menuButton = {
+    height: "34px",
+    width: "38px",
+    minWidth: "38px",
+    padding: 0,
+    borderRadius: "6px",
+  };
+
   return (
     <div className="clienti-page">
       <h1>Anagrafica Clienti</h1>
@@ -471,6 +549,22 @@ function Clienti() {
           style={{ width: "100%", marginTop: "12px" }}
         />
 
+        {form.id && (
+          <div style={{ marginTop: "14px", padding: "12px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "#f8fafc" }}>
+            <strong>Cartella archivio:</strong>{" "}
+            <span>{cartellaForm?.percorsoAbbreviato || cartellaForm?.folderPath || "Percorso non verificato"}</span>
+            <p style={{ margin: "8px 0", color: cartellaForm?.exists ? "#15803d" : "#b45309" }}>
+              {cartellaForm?.status || "Cartella non verificata"}
+            </p>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <button type="button" onClick={() => apriCartellaCliente({ id: form.id })}>Apri cartella</button>
+              {cartellaForm && !cartellaForm.exists && (
+                <button type="button" onClick={() => creaCartellaCliente({ id: form.id })}>Crea cartella</button>
+              )}
+            </div>
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: "10px", marginTop: "18px", flexWrap: "wrap" }}>
           <button onClick={salvaCliente}>{form.id ? "Salva Modifiche" : "Aggiungi Cliente"}</button>
           <button onClick={resetForm}>Nuovo / Annulla</button>
@@ -558,10 +652,43 @@ function Clienti() {
                     <td style={{ textAlign: "left" }}>{valoreCliente(cliente, "via", "indirizzo")}</td>
                     <td style={{ textAlign: "left" }}>{valoreCliente(cliente, "noteCliente", "note")}</td>
                     <td>
-                      <button onClick={() => modificaCliente(cliente)}>Modifica</button>{" "}
-                      <button onClick={() => creaPreventivoCliente(cliente)}>Nuovo preventivo</button>{" "}
-                      <button onClick={() => creaCantiereCliente(cliente)}>Nuovo cantiere</button>{" "}
-                      <button onClick={() => eliminaCliente(cliente)}>Elimina</button>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: "8px", minWidth: "610px", position: "relative", whiteSpace: "nowrap" }}>
+                        <button style={actionButton} onClick={() => modificaCliente(cliente)}>Modifica</button>
+                        <button style={actionButton} onClick={() => creaPreventivoCliente(cliente)}>Nuovo Preventivo</button>
+                        <button style={actionButton} onClick={() => creaCantiereCliente(cliente)}>Nuovo Cantiere</button>
+                        <button style={actionButton} onClick={() => apriCartellaCliente(cliente)}>Apri Cartella</button>
+                        <button
+                          style={menuButton}
+                          aria-label={`Altro ${cliente.ragioneSociale || cliente.id}`}
+                          onClick={() => setMenuAltroClienteId(menuAltroClienteId === cliente.id ? null : cliente.id)}
+                        >
+                          ⋮
+                        </button>
+                        {menuAltroClienteId === cliente.id && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              right: 0,
+                              top: "40px",
+                              zIndex: 10,
+                              minWidth: "180px",
+                              background: "white",
+                              border: "1px solid #e2e8f0",
+                              borderRadius: "8px",
+                              boxShadow: "0 12px 30px rgba(15,23,42,0.14)",
+                              overflow: "hidden",
+                              textAlign: "left",
+                            }}
+                          >
+                            <button type="button" onClick={() => apriSchedaCliente(cliente)} style={{ display: "block", width: "100%", border: 0, background: "white", padding: "10px 12px", textAlign: "left" }}>
+                              Apri scheda cliente
+                            </button>
+                            <button type="button" onClick={() => { setMenuAltroClienteId(null); eliminaCliente(cliente); }} style={{ display: "block", width: "100%", border: 0, background: "white", color: "#b91c1c", padding: "10px 12px", textAlign: "left" }}>
+                              Elimina
+                            </button>
+                          </div>
+                        )}
+                      </div>
                       <span style={{ display: "none" }}>
                         {contaPreventiviCliente(cliente)} {contaCantieriCliente(cliente)}
                       </span>
