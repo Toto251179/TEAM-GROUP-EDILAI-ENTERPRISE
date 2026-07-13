@@ -9,6 +9,23 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-13
 
+### Correzione scrittura Titoli e Note Preventivi
+
+Correzioni:
+
+- Stabilizzate le chiavi React delle righe Preventivi con `id` o `idLocale`.
+- Aggiunto identificativo locale stabile per Titoli capitolo e Note descrittive non ancora salvati.
+- La modifica testuale di Titoli e Note aggiorna solo il campo ufficiale `descrizione` della riga interessata.
+- La duplicazione delle righe assegna un nuovo identificativo locale per evitare collisioni.
+
+Test eseguiti:
+
+- Verifica statica del mapping `descrizione`, della chiave stabile e dell'assenza di chiavi basate sul testo digitato.
+- Creazione preventivo temporaneo con Titolo, Nota multilinea, accenti, simbolo euro e newline.
+- Rilettura API Preventivi con valori identici e cancellazione del preventivo temporaneo.
+
+---
+
 ### Capitoli e righe descrittive Preventivi
 
 Correzioni:

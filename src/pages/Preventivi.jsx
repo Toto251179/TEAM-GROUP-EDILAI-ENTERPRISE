@@ -88,6 +88,15 @@ const rigaVuota = {
   sconto: "0",
 };
 
+function creaIdLocaleRiga() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `riga-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getIdLocaleRiga(riga = {}) {
+  return String(riga.idLocale || riga.id || creaIdLocaleRiga());
+}
+
 function getTipoRigaPreventivo(riga = {}) {
   const tipo = String(riga.tipoRiga ?? riga.tipo_riga ?? "ECONOMICA").trim().toUpperCase();
   return ["TITOLO", "NOTA"].includes(tipo) ? tipo : "ECONOMICA";
@@ -99,6 +108,7 @@ function isRigaEconomicaPreventivo(riga = {}) {
 
 function rigaTitoloVuota() {
   return {
+    idLocale: creaIdLocaleRiga(),
     tipoRiga: "TITOLO",
     descrizione: "",
     mostraSubtotaleCapitolo: false,
@@ -107,6 +117,7 @@ function rigaTitoloVuota() {
 
 function rigaNotaVuota() {
   return {
+    idLocale: creaIdLocaleRiga(),
     tipoRiga: "NOTA",
     descrizione: "",
   };
@@ -284,8 +295,11 @@ function calcolaTotali(righe = [], ivaAliquota = IVA_DEFAULT) {
 
 function normalizzaRiga(riga) {
   const tipoRiga = getTipoRigaPreventivo(riga);
+  const idLocale = getIdLocaleRiga(riga);
   if (tipoRiga !== "ECONOMICA") {
     return {
+      id: riga.id,
+      idLocale,
       tipoRiga,
       descrizione: String(riga.descrizione || ""),
       ordineRiga: riga.ordineRiga ?? riga.ordine_riga ?? 0,
@@ -298,6 +312,7 @@ function normalizzaRiga(riga) {
 
   const rigaConMisure = {
     ...riga,
+    idLocale,
     tipoRiga,
     categoria: riga.categoria || "Edili",
     categoriaBloccata: riga.categoriaBloccata !== false,
@@ -803,6 +818,15 @@ function Preventivi() {
     }));
   };
 
+  const aggiornaTestoRiga = (idLocale, testo) => {
+    setForm((corrente) => ({
+      ...corrente,
+      righe: corrente.righe.map((item) =>
+        item.idLocale === idLocale ? { ...item, descrizione: testo } : item,
+      ),
+    }));
+  };
+
   const abilitaCambioCategoriaRiga = (index) => {
     setForm((corrente) => ({
       ...corrente,
@@ -841,7 +865,7 @@ function Preventivi() {
       if (!rigaDaDuplicare) return corrente;
 
       const righe = [...corrente.righe];
-      righe.splice(index + 1, 0, normalizzaRiga({ ...rigaDaDuplicare }));
+      righe.splice(index + 1, 0, normalizzaRiga({ ...rigaDaDuplicare, id: undefined, idLocale: creaIdLocaleRiga() }));
 
       return { ...corrente, righe: righe.map((item, itemIndex) => ({ ...item, ordineRiga: itemIndex })) };
     });
@@ -1984,7 +2008,7 @@ function Preventivi() {
 
                 return (
                   <tr
-                    key={`${tipoRiga}-${rigaPreventivo.descrizione}-${index}`}
+                    key={rigaPreventivo.id || rigaPreventivo.idLocale}
                     style={{ background: isTitolo ? "#fff7ed" : "#f8fafc" }}
                   >
                     <td>{index + 1}</td>
@@ -2020,12 +2044,13 @@ function Preventivi() {
                         </div>
                         <textarea
                           value={rigaPreventivo.descrizione}
-                          onChange={(e) => aggiornaRigaPreventivo(index, "descrizione", e.target.value)}
+                          onChange={(e) => aggiornaTestoRiga(rigaPreventivo.idLocale, e.target.value)}
                           placeholder={isTitolo ? "Titolo capitolo" : "Nota descrittiva"}
                           style={{
-                            minHeight: isTitolo ? "42px" : "86px",
+                            minHeight: isTitolo ? "48px" : "100px",
                             width: "100%",
                             resize: "vertical",
+                            whiteSpace: "pre-wrap",
                             fontWeight: isTitolo ? 800 : 400,
                             fontSize: isTitolo ? "1rem" : "0.92rem",
                           }}
@@ -2045,7 +2070,7 @@ function Preventivi() {
               }
 
               return (
-              <tr key={`${rigaPreventivo.descrizione}-${index}`}>
+              <tr key={rigaPreventivo.id || rigaPreventivo.idLocale}>
                 <td>{index + 1}</td>
                 <td>
                   <input
