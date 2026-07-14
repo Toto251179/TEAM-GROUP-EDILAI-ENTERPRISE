@@ -9,6 +9,25 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-13
 
+### Correzione layout Titolo capitolo PDF Preventivi
+
+Correzioni:
+
+- Spostato il Titolo capitolo nella colonna `DESIGNAZIONE DEI LAVORI`.
+- Il titolo viene stampato allineato a sinistra, in grassetto e con sfondo bianco.
+- Eliminata la riga autonoma a tutta larghezza per Titoli e Note descrittive.
+- Le Note descrittive vengono stampate sotto il titolo e prima della prima voce economica del capitolo.
+- Il titolo viene applicato solo alla prima voce economica del capitolo e non viene duplicato.
+
+Test eseguiti:
+
+- Generazione PDF reale con Titolo, Nota e voce economica da 3.200,00.
+- Rendering PNG del PDF con verifica visiva della colonna Designazione.
+- Estrazione testo PDF con Titolo, Nota e descrizione presenti una sola volta.
+- Apertura del PDF di test in Chrome.
+
+---
+
 ### Correzione scrittura Titoli e Note Preventivi
 
 Correzioni:

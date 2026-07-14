@@ -292,6 +292,40 @@ function calcolaSubtotaleCapitoloPdf(righe = [], titoloIndex = 0) {
   return Number(totale.toFixed(2));
 }
 
+function creaDesignazionePdf({ titolo = "", note = [], descrizione = "" } = {}) {
+  const blocchi = [
+    titolo ? String(titolo).trim() : "",
+    ...note.map((nota) => String(nota || "").trim()).filter(Boolean),
+    String(descrizione || "").trim(),
+  ].filter(Boolean);
+
+  return {
+    content: blocchi.join("\n\n"),
+    styles: { fillColor: [255, 255, 255], halign: "left" },
+    pdfDesignazione: {
+      titolo: titolo ? String(titolo).trim() : "",
+      note: note.map((nota) => String(nota || "").trim()).filter(Boolean),
+      descrizione: String(descrizione || "").trim(),
+    },
+  };
+}
+
+function calcolaAltezzaDesignazionePdf(doc, designazione = {}, maxWidth = 77.6) {
+  let altezza = 3.4;
+  if (designazione.titolo) {
+    altezza += doc.splitTextToSize(designazione.titolo, maxWidth).length * 3.6 + 2.8;
+  }
+  if (designazione.note?.length) {
+    designazione.note.forEach((nota) => {
+      altezza += doc.splitTextToSize(nota, maxWidth).length * 3.3 + 2.2;
+    });
+  }
+  if (designazione.descrizione) {
+    altezza += doc.splitTextToSize(designazione.descrizione, maxWidth).length * 3.3;
+  }
+  return Math.max(7, altezza + 1.5);
+}
+
 function formatMisuraPdf(riga, campo) {
   const valoriMisura = ["partiUguali", "lunghezza", "larghezza", "altezzaPeso"].map((nomeCampo) =>
     numeroPreventivo(riga[nomeCampo] ?? riga[nomeCampo.replace(/[A-Z]/g, (lettera) => `_${lettera.toLowerCase()}`)]),
@@ -363,33 +397,74 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
 
   const computoRows = [];
   let titoloSubtotaleAttivo = null;
+  let titoloDesignazione = "";
+  let noteDesignazione = [];
+
   const aggiungiSubtotaleCapitolo = () => {
     if (titoloSubtotaleAttivo === null) return;
     const titolo = righe[titoloSubtotaleAttivo];
-    if (titolo?.mostraSubtotaleCapitolo || titolo?.mostra_subtotale_capitolo) {
-      computoRows.push([{ content: `TOTALE CAPITOLO ${formatEuro(calcolaSubtotaleCapitoloPdf(righe, titoloSubtotaleAttivo))}`, colSpan: 9, styles: { fontStyle: "bold", halign: "right", fillColor: [255, 247, 237] } }]);
+    const subtotale = calcolaSubtotaleCapitoloPdf(righe, titoloSubtotaleAttivo);
+    if ((titolo?.mostraSubtotaleCapitolo || titolo?.mostra_subtotale_capitolo) && subtotale > 0) {
+      computoRows.push([{ content: `TOTALE CAPITOLO ${formatEuro(subtotale)}`, colSpan: 9, styles: { fontStyle: "bold", halign: "right", fillColor: [255, 247, 237] } }]);
     }
+  };
+
+  const aggiungiRigaDescrittivaSospesa = () => {
+    if (!titoloDesignazione && noteDesignazione.length === 0) return;
+    computoRows.push([
+      "",
+      creaDesignazionePdf({ titolo: titoloDesignazione, note: noteDesignazione }),
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+    ]);
+    titoloDesignazione = "";
+    noteDesignazione = [];
   };
 
   righe.forEach((rigaPdf, index) => {
     const tipoRiga = getTipoRiga(rigaPdf);
     if (tipoRiga === "TITOLO") {
+      aggiungiRigaDescrittivaSospesa();
       aggiungiSubtotaleCapitolo();
       titoloSubtotaleAttivo = index;
-      computoRows.push([{ content: getDescrizioneRigaPdf(rigaPdf), colSpan: 9, styles: { fontStyle: "bold", fontSize: 8.6, fillColor: [255, 247, 237], cellPadding: { top: 3, right: 1, bottom: 2.4, left: 1.5 } } }]);
+      titoloDesignazione = getDescrizioneRigaPdf(rigaPdf);
+      noteDesignazione = [];
       return;
     }
     if (tipoRiga === "NOTA") {
-      computoRows.push([{ content: getDescrizioneRigaPdf(rigaPdf), colSpan: 9, styles: { fontStyle: "normal", fontSize: 7.6, fillColor: [248, 250, 252], cellPadding: { top: 2.2, right: 1, bottom: 2.2, left: 1.5 } } }]);
+      const nota = getDescrizioneRigaPdf(rigaPdf);
+      if (nota) noteDesignazione.push(nota);
       return;
     }
 
     const valori = getRigaPdfValori(rigaPdf);
     computoRows.push(
-      [rigaPdf.codice || index + 1, rigaPdf.descrizione || "", formatMisuraPdf(rigaPdf, "partiUguali"), formatMisuraPdf(rigaPdf, "lunghezza"), formatMisuraPdf(rigaPdf, "larghezza"), formatMisuraPdf(rigaPdf, "altezzaPeso"), "", "", ""],
+      [
+        rigaPdf.codice || index + 1,
+        creaDesignazionePdf({
+          titolo: titoloDesignazione,
+          note: noteDesignazione,
+          descrizione: rigaPdf.descrizione || "",
+        }),
+        formatMisuraPdf(rigaPdf, "partiUguali"),
+        formatMisuraPdf(rigaPdf, "lunghezza"),
+        formatMisuraPdf(rigaPdf, "larghezza"),
+        formatMisuraPdf(rigaPdf, "altezzaPeso"),
+        "",
+        "",
+        "",
+      ],
       ["", `SOMMANO a ${getUnitaRiga(rigaPdf)}`, "", "", "", "", formatNumeroConDecimali(valori.quantita), formatEuro(valori.prezzoUnitario), formatEuro(valori.importo)],
     );
+    titoloDesignazione = "";
+    noteDesignazione = [];
   });
+  aggiungiRigaDescrittivaSospesa();
   aggiungiSubtotaleCapitolo();
 
   autoTable(doc, {
@@ -404,9 +479,51 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
     didParseCell: (data) => {
       const rawRow = data.row.raw || [];
       const isSommano = typeof rawRow[1] === "string" && rawRow[1].startsWith("SOMMANO");
+      const designazione = data.column.index === 1 && data.cell.raw?.pdfDesignazione;
+      if (data.row.section === "body" && designazione) {
+        data.cell.styles.fillColor = [255, 255, 255];
+        data.cell.styles.halign = "left";
+        data.cell.styles.minCellHeight = calcolaAltezzaDesignazionePdf(doc, designazione, 77.6);
+        data.cell.text = [];
+      }
       if (data.row.section === "body" && isSommano) {
         data.cell.styles.fontStyle = data.column.index === 1 ? "italic" : "normal";
         if (data.column.index === 1) data.cell.styles.halign = "right";
+      }
+    },
+    didDrawCell: (data) => {
+      const designazione = data.column.index === 1 && data.cell.raw?.pdfDesignazione;
+      if (data.row.section !== "body" || !designazione) return;
+
+      const x = data.cell.x + 1.2;
+      let textY = data.cell.y + 3.4;
+      const maxWidth = data.cell.width - 2.4;
+
+      if (designazione.titolo) {
+        doc.setFont(undefined, "bold");
+        doc.setFontSize(8.6);
+        doc.setTextColor(0, 0, 0);
+        const righeTitolo = doc.splitTextToSize(designazione.titolo, maxWidth);
+        doc.text(righeTitolo, x, textY);
+        textY += righeTitolo.length * 3.6 + 2.8;
+      }
+
+      if (designazione.note?.length) {
+        doc.setFont(undefined, "normal");
+        doc.setFontSize(7.4);
+        doc.setTextColor(0, 0, 0);
+        designazione.note.forEach((nota) => {
+          const righeNota = doc.splitTextToSize(nota, maxWidth);
+          doc.text(righeNota, x, textY);
+          textY += righeNota.length * 3.3 + 2.2;
+        });
+      }
+
+      if (designazione.descrizione) {
+        doc.setFont(undefined, "normal");
+        doc.setFontSize(7.2);
+        doc.setTextColor(0, 0, 0);
+        doc.text(doc.splitTextToSize(designazione.descrizione, maxWidth), x, textY);
       }
     },
   });
