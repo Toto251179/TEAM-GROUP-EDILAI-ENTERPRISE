@@ -14,6 +14,7 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 Correzioni:
 
 - Ridisegnato il riepilogo superiore del modulo Cantieri con card operative piu leggibili.
+- Compattata la schermata Cantieri per mostrare riepilogo, form ed elenco gia nel primo viewport.
 - I KPI Cantieri ora mostrano i valori reali caricati da PostgreSQL/API.
 - Normalizzate le varianti stato `Completata`, `Completato`, `cancellato` e sinonimi per conteggi, filtri e badge.
 - Migliorato il layout del form Nuovo Cantiere e della toolbar elenco con icone e spaziature coerenti.
@@ -24,6 +25,7 @@ Test eseguiti:
 - Verifica API `GET /api/cantieri` con 5 cantieri reali.
 - Verifica CRUD temporaneo `POST`, `GET`, `PUT` e `DELETE /api/cantieri`.
 - Verifica browser pagina `/cantieri` con KPI: 5 cantieri, 3 in corso, 1 completato, 0 sospesi, EUR 14.313,98.
+- Verifica visuale browser dopo compattazione grafica.
 - Verifica console browser senza errori.
 - Build frontend completata.
 

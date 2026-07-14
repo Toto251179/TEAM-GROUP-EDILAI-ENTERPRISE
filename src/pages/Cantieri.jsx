@@ -357,45 +357,43 @@ function Cantieri() {
       align-items: flex-end;
       justify-content: space-between;
       gap: 18px;
-      margin-bottom: 18px;
+      margin-bottom: 12px;
     }
 
     .cantieri-heading h1 {
-      margin: 0 0 5px;
-      font-size: 30px;
+      margin: 0;
+      font-size: 28px;
       line-height: 1.12;
     }
 
     .cantieri-heading p {
-      color: #64748b;
-      font-size: 14px;
-      font-weight: 700;
+      display: none;
     }
 
     .cantieri-stats {
       display: grid;
-      grid-template-columns: repeat(5, minmax(170px, 1fr));
-      gap: 14px;
-      margin-bottom: 18px;
+      grid-template-columns: repeat(5, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
     }
 
     .cantieri-stat-card {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 14px;
-      min-height: 92px;
+      gap: 10px;
+      min-height: 74px;
       border: 1px solid #e2e8f0;
       border-radius: 8px;
-      padding: 17px 18px;
+      padding: 13px 14px;
       background: #ffffff;
-      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.055);
     }
 
     .cantieri-stat-card span {
       display: block;
       color: #64748b;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 850;
       letter-spacing: 0;
       text-transform: uppercase;
@@ -403,21 +401,22 @@ function Cantieri() {
 
     .cantieri-stat-card strong {
       display: block;
-      margin-top: 7px;
+      margin-top: 6px;
       color: #0f172a;
-      font-size: 24px;
+      font-size: 22px;
       line-height: 1;
     }
 
     .cantieri-stat-card.value strong {
-      font-size: 21px;
+      font-size: 18px;
+      line-height: 1.1;
     }
 
     .cantieri-stat-icon {
       display: grid;
-      width: 42px;
-      height: 42px;
-      flex: 0 0 42px;
+      width: 36px;
+      height: 36px;
+      flex: 0 0 36px;
       place-items: center;
       border-radius: 8px;
       background: #eff6ff;
@@ -427,21 +426,21 @@ function Cantieri() {
     .cantieri-form-card {
       border: 1px solid #e2e8f0;
       border-radius: 8px;
-      padding: 18px;
-      margin-bottom: 18px;
+      padding: 14px;
+      margin-bottom: 14px;
       background: #ffffff;
-      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.055);
     }
 
     .cantieri-form-card h2 {
-      margin-bottom: 14px;
-      font-size: 20px;
+      margin-bottom: 10px;
+      font-size: 18px;
     }
 
     .cantieri-form-grid {
       display: grid;
       grid-template-columns: minmax(220px, 1.4fr) minmax(220px, 1.2fr) minmax(220px, 1.2fr) minmax(220px, 1.2fr);
-      gap: 10px;
+      gap: 8px;
     }
 
     .cantieri-form-grid input,
@@ -450,17 +449,19 @@ function Cantieri() {
       width: 100%;
       border-color: #cbd5e1;
       border-radius: 6px;
+      min-height: 34px;
     }
 
     .cantieri-form-card textarea {
-      margin-top: 10px;
+      min-height: 58px;
+      margin-top: 8px;
     }
 
     .cantieri-form-actions {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       flex-wrap: wrap;
-      margin-top: 14px;
+      margin-top: 10px;
     }
 
     .cantieri-form-actions button,
@@ -490,12 +491,12 @@ function Cantieri() {
       align-items: flex-start;
       justify-content: space-between;
       gap: 18px;
-      padding: 22px;
+      padding: 16px 18px;
       border-bottom: 1px solid #e2e8f0;
     }
 
     .cantieri-list-header h2 {
-      font-size: 24px;
+      font-size: 20px;
       line-height: 1.2;
       margin: 0 0 6px;
       color: #0f172a;
@@ -535,7 +536,7 @@ function Cantieri() {
       background: #ffffff;
       color: #0f172a;
       padding: 0 12px;
-      font-size: 14px;
+      font-size: 13px;
     }
 
     .cantieri-toolbar input {
@@ -573,10 +574,10 @@ function Cantieri() {
       background: #f8fafc;
       border-bottom: 1px solid #e2e8f0;
       color: #475569;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 800;
       letter-spacing: 0;
-      padding: 13px 14px;
+      padding: 11px 12px;
       text-transform: uppercase;
       white-space: nowrap;
     }
@@ -584,8 +585,8 @@ function Cantieri() {
     .cantieri-table td {
       border-bottom: 1px solid #eef2f7;
       color: #0f172a;
-      font-size: 14px;
-      padding: 14px;
+      font-size: 13px;
+      padding: 11px 12px;
       vertical-align: middle;
     }
 
@@ -635,7 +636,7 @@ function Cantieri() {
       display: block;
       margin-top: 4px;
       color: #64748b;
-      font-size: 12px;
+      font-size: 11px;
       line-height: 1.25;
     }
 
@@ -659,9 +660,9 @@ function Cantieri() {
       min-width: 94px;
       border: 0;
       border-radius: 999px;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 800;
-      padding: 7px 10px;
+      padding: 6px 9px;
       text-align: center;
       white-space: nowrap;
     }
@@ -734,9 +735,9 @@ function Cantieri() {
       align-items: center;
       justify-content: space-between;
       gap: 14px;
-      padding: 16px 22px;
+      padding: 12px 18px;
       color: #64748b;
-      font-size: 14px;
+      font-size: 13px;
     }
 
     .cantieri-pagination-controls {
@@ -865,7 +866,7 @@ function Cantieri() {
       <div className="cantieri-heading">
         <div>
           <h1>Cantieri Enterprise</h1>
-          <p>Gestione operativa dei cantieri collegata ai dati PostgreSQL.</p>
+          <p>Cantieri</p>
         </div>
       </div>
 
