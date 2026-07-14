@@ -176,7 +176,12 @@ function calcolaQuantitaRiga(riga) {
   const quantitaEsplicita = numeroPreventivo(riga.quantita ?? riga.quantity ?? riga.qty ?? riga.qta);
   const unita = String(riga.unita ?? riga.unitaMisura ?? riga.um ?? "").trim().toLowerCase();
 
-  if (unita.includes("corpo") || unita === "cad" || unita === "pz") {
+  if (unita === "cad" || unita === "pz") {
+    if (partiUguali > 0) return Number(partiUguali.toFixed(2));
+    return quantitaEsplicita > 0 ? Number(quantitaEsplicita.toFixed(2)) : 1;
+  }
+
+  if (unita.includes("corpo")) {
     return quantitaEsplicita > 0 ? Number(quantitaEsplicita.toFixed(2)) : 1;
   }
 

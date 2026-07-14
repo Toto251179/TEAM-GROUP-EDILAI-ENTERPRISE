@@ -84,7 +84,12 @@ export function calcolaQuantitaRiga(riga = {}) {
     riga.quantita ?? riga.quantity ?? riga.qty ?? riga.qta,
   );
 
-  if (unita.includes("corpo") || unita === "cad" || unita === "pz") {
+  if (unita === "cad" || unita === "pz") {
+    if (misure.partiUguali > 0) return Number(misure.partiUguali.toFixed(2));
+    return quantitaEsplicita > 0 ? Number(quantitaEsplicita.toFixed(2)) : 1;
+  }
+
+  if (unita.includes("corpo")) {
     return quantitaEsplicita > 0 ? Number(quantitaEsplicita.toFixed(2)) : 1;
   }
 

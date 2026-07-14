@@ -9,6 +9,22 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-13
 
+### Correzione calcolo righe cad Preventivi
+
+Correzioni:
+
+- Per le righe con unità `cad` e `pz`, il calcolo quantità usa `partiUguali` quando valorizzato.
+- Allineati calcolo frontend e motore backend Preventivi.
+- Evitato il fallback errato a quantità `1` su righe già salvate con `partiUguali` maggiore di zero.
+
+Test eseguiti:
+
+- Verifica motore calcolo: `cad`, parti uguali `3`, prezzo `900,00` genera quantità `3` e importo `2.700,00`.
+- Verifica motore calcolo: `cad`, parti uguali `3`, prezzo `2.800,00` genera quantità `3` e importo `8.400,00`.
+- Verifica regressione `corpo`: parti uguali `3` mantiene quantità `1`.
+
+---
+
 ### Revisione grafica PDF Preventivi
 
 Correzioni:
