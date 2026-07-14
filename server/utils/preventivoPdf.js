@@ -151,7 +151,7 @@ async function ensureCanonicalDirectory(parentDir, desiredName, identityPrefix) 
 
 async function ensureClienteDocumentFolders(clienteFolderPath) {
   await Promise.all(
-    ["Preventivi", "Cantieri", "Rapportini", "Fatture", "Allegati"].map((folderName) =>
+    ["Preventivi", "Cantieri", "Rapportini", "Fatture", "Consuntivi", "Allegati"].map((folderName) =>
       ensureDir(path.join(clienteFolderPath, folderName)),
     ),
   );

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query } from "../config/db.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { assicuraCartellaConsuntivoChiamata } from "../utils/consuntiviArchivio.js";
 
 const router = Router();
 
@@ -339,6 +340,8 @@ async function creaConsuntivazioneDaChiamata(chiamata, body = {}) {
       margineAzienda,
     ],
   );
+
+  await assicuraCartellaConsuntivoChiamata(chiamata);
 }
 
 router.use("/ufficio", asyncHandler(async (_req, _res, next) => {
@@ -504,6 +507,26 @@ router.put("/ufficio/tecnici/:id", asyncHandler(async (req, res) => {
   res.json(toCamel(result.rows[0]));
 }));
 
+router.post("/ufficio/consuntivi/cartelle", asyncHandler(async (_req, res) => {
+  const result = await query(
+    `SELECT *
+     FROM chiamate_tecnici
+     ORDER BY updated_at DESC, created_at DESC`,
+  );
+  const cartelle = [];
+
+  for (const row of result.rows) {
+    cartelle.push(await assicuraCartellaConsuntivoChiamata(toCamel(row)));
+  }
+
+  res.json({
+    success: true,
+    chiamate: result.rows.length,
+    cartelleCreate: cartelle.length,
+    cartelle,
+  });
+}));
+
 router.delete("/ufficio/tecnici/:id", asyncHandler(async (req, res) => {
   const result = await query("DELETE FROM tecnici_operatori WHERE id = $1 RETURNING *", [req.params.id]);
   if (!result.rows[0]) return res.status(404).json({ message: "Tecnico non trovato" });
@@ -590,7 +613,10 @@ router.post("/ufficio/chiamate", asyncHandler(async (req, res) => {
     ],
   );
 
-  res.status(201).json(toCamel(result.rows[0]));
+  const chiamataCreata = toCamel(result.rows[0]);
+  const consuntivoCartella = await assicuraCartellaConsuntivoChiamata(chiamataCreata);
+
+  res.status(201).json({ ...chiamataCreata, consuntivoCartella });
 }));
 
 router.put("/ufficio/chiamate/:id", asyncHandler(async (req, res) => {
@@ -638,7 +664,10 @@ router.put("/ufficio/chiamate/:id", asyncHandler(async (req, res) => {
     ],
   );
 
-  res.json(toCamel(result.rows[0]));
+  const chiamataAggiornata = toCamel(result.rows[0]);
+  const consuntivoCartella = await assicuraCartellaConsuntivoChiamata(chiamataAggiornata);
+
+  res.json({ ...chiamataAggiornata, consuntivoCartella });
 }));
 
 router.delete("/ufficio/chiamate/:id", asyncHandler(async (req, res) => {
@@ -857,8 +886,11 @@ router.put("/chiamate/:id/chiudi", autenticaSquadra, asyncHandler(async (req, re
     ],
   );
 
-  await creaConsuntivazioneDaChiamata(toCamel(result.rows[0]), req.body);
-  res.json({ ...toCamel(result.rows[0]), foto });
+  const chiamataChiusa = toCamel(result.rows[0]);
+  await creaConsuntivazioneDaChiamata(chiamataChiusa, req.body);
+  const consuntivoCartella = await assicuraCartellaConsuntivoChiamata(chiamataChiusa);
+
+  res.json({ ...chiamataChiusa, foto, consuntivoCartella });
 }));
 
 export default router;

@@ -9,6 +9,29 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-14
 
+### Cartelle Consuntivi per lavori e chiamate
+
+Correzioni:
+
+- Aggiunta creazione automatica della cartella `Consuntivi` tra le sottocartelle standard cliente.
+- Aggiunta cartella dedicata per ogni cantiere/lavoro in `Clienti/<ID - Cliente>/Consuntivi/<CANTIERE-ID - Nome lavoro>`.
+- Aggiunta cartella dedicata per ogni chiamata tecnica in `Clienti/<ID - Cliente>/Consuntivi/<Numero chiamata - Descrizione>`.
+- Aggiunti endpoint di manutenzione per creare le cartelle consuntivi anche sui dati gia presenti.
+
+Test eseguiti:
+
+- Verifica backend health con PostgreSQL connesso.
+- Creazione massiva cartelle consuntivi per 5 cantieri reali.
+- Verifica massiva chiamate tecniche: 0 chiamate presenti, nessuna cartella da creare.
+- Test CRUD temporaneo Cantieri con creazione automatica cartella consuntivo in POST e PUT.
+- Test CRUD temporaneo Chiamate Tecnici con creazione automatica cartella consuntivo in POST e PUT.
+- Eliminazione del record e della sola cartella temporanea di test.
+- Eliminazione del record chiamata e della sola cartella temporanea chiamata di test.
+- Verifica filesystem su cartelle consuntivi reali create.
+- Build frontend completata.
+
+---
+
 ### Correzione formato importi Cantieri
 
 Correzioni:
