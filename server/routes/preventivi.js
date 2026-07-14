@@ -18,6 +18,7 @@ import {
   getScontoRiga,
   normalizzaIvaAliquota,
   numeroPreventivo,
+  deduplicaRighePdf,
 } from "../utils/preventivoCalcoli.js";
 
 const repository = createCrudRepository({
@@ -343,7 +344,7 @@ async function getRighe(preventivoId) {
         [preventivoId],
       );
 
-  return result.rows.map((row) => {
+  const righe = result.rows.map((row) => {
     const riga = toCamel(row);
     const tipoRiga = getTipoRiga(riga);
 
@@ -385,6 +386,8 @@ async function getRighe(preventivoId) {
       totale: importo,
     };
   });
+
+  return deduplicaRighePdf(righe);
 }
 
 async function getPreventivoCompleto(id) {
@@ -707,7 +710,7 @@ router.get("/:id", asyncHandler(async (req, res) => {
 
 router.post("/", asyncHandler(async (req, res) => {
   await ensurePreventivoTotaliSchema();
-  const righe = Array.isArray(req.body.righe) ? req.body.righe : [];
+  const righe = deduplicaRighePdf(Array.isArray(req.body.righe) ? req.body.righe : []);
   const payload = await normalizzaPayloadClientePreventivo(req.body, { clienteObbligatorio: true });
   const totali = calcolaTotaliPreventivo(righe, req.body.ivaAliquota ?? req.body.ivaPercentuale);
 
@@ -728,7 +731,7 @@ router.post("/", asyncHandler(async (req, res) => {
 
 router.put("/:id", asyncHandler(async (req, res) => {
   await ensurePreventivoTotaliSchema();
-  const righe = Array.isArray(req.body.righe) ? req.body.righe : null;
+  const righe = Array.isArray(req.body.righe) ? deduplicaRighePdf(req.body.righe) : null;
   const payload = await normalizzaPayloadClientePreventivo(req.body);
   const ivaAliquota = payload.ivaAliquota ?? payload.ivaPercentuale;
   delete payload.ivaAliquota;

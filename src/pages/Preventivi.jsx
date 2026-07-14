@@ -298,6 +298,47 @@ function calcolaTotali(righe = [], ivaAliquota = IVA_DEFAULT) {
   return { lordo, sconto, imponibile, iva, totale, ivaAliquota: aliquota };
 }
 
+function chiaveRigaPreventivo(riga = {}) {
+  const tipoRiga = getTipoRigaPreventivo(riga);
+  const normalizzaTesto = (value) => String(value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+
+  if (tipoRiga !== "ECONOMICA") {
+    return [
+      tipoRiga,
+      normalizzaTesto(riga.descrizione),
+      Boolean(riga.mostraSubtotaleCapitolo),
+    ].join("|");
+  }
+
+  return [
+    tipoRiga,
+    normalizzaTesto(riga.codice),
+    normalizzaTesto(riga.descrizione),
+    normalizzaTesto(riga.unita),
+    numeroPreventivo(riga.partiUguali).toFixed(4),
+    numeroPreventivo(riga.lunghezza).toFixed(4),
+    numeroPreventivo(riga.larghezza).toFixed(4),
+    numeroPreventivo(riga.altezzaPeso).toFixed(4),
+    numeroPreventivo(riga.quantita).toFixed(4),
+    numeroPreventivo(riga.prezzoUnitario).toFixed(4),
+    numeroPreventivo(riga.sconto).toFixed(4),
+  ].join("|");
+}
+
+function deduplicaRighePreventivo(righe = []) {
+  const risultato = [];
+  let chiavePrecedente = null;
+
+  (Array.isArray(righe) ? righe : []).forEach((riga) => {
+    const chiave = chiaveRigaPreventivo(riga);
+    if (chiave && chiave === chiavePrecedente) return;
+    risultato.push(riga);
+    chiavePrecedente = chiave;
+  });
+
+  return risultato;
+}
+
 function normalizzaRiga(riga) {
   const tipoRiga = getTipoRigaPreventivo(riga);
   const idLocale = getIdLocaleRiga(riga);
@@ -1089,7 +1130,9 @@ function Preventivi() {
       descrizione: form.descrizione,
       ivaAliquota: normalizzaIvaAliquota(form.ivaAliquota),
       stato: statoForzato || form.stato,
-      righe: form.righe.map((rigaPreventivo, index) => normalizzaRiga({ ...rigaPreventivo, categoriaBloccata: true, ordineRiga: index })),
+      righe: deduplicaRighePreventivo(
+        form.righe.map((rigaPreventivo, index) => normalizzaRiga({ ...rigaPreventivo, categoriaBloccata: true, ordineRiga: index })),
+      ),
     };
 
     try {

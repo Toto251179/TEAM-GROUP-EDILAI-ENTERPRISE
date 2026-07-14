@@ -9,6 +9,22 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-13
 
+### Correzione duplicazione voci Preventivi
+
+Correzioni:
+
+- Aggiunta deduplica conservativa delle righe Preventivi consecutive identiche in lettura API.
+- Aggiunta deduplica delle righe inviate in creazione e modifica preventivo.
+- Allineato il payload frontend per non reinviare copie consecutive identiche.
+
+Test eseguiti:
+
+- Verifica duplicati su preventivo reale `PREV-26195 -Rev00`.
+- Rimozione duplicati dal preventivo reale tramite salvataggio API.
+- Verifica righe economiche non duplicate dopo ricarica API.
+
+---
+
 ### Correzione calcolo righe cad Preventivi
 
 Correzioni:
