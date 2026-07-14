@@ -217,7 +217,29 @@ function getRigaPdfValori(riga = {}) {
 }
 
 function getDescrizioneRigaPdf(riga = {}) {
-  return String(riga.descrizione || "").trim();
+  return normalizzaTestoPdf(riga.descrizione || "");
+}
+
+function normalizzaTestoPdf(value, { preservaRighe = false } = {}) {
+  const normalizzaRiga = (testo) =>
+    String(testo || "")
+      .replace(/\s+/g, " ")
+      .replace(/\s+,/g, ",")
+      .replace(/,(\S)/g, ", $1")
+      .replace(/\bCATIOIE\b/g, "CADITOIE")
+      .replace(/\bPAVIMENTAZIONEESTERNA\b/g, "PAVIMENTAZIONE ESTERNA")
+      .replace(/\bSUB\.(?=\d)/g, "SUB. ")
+      .trim();
+
+  if (preservaRighe) {
+    return String(value || "")
+      .split(/\r?\n/)
+      .map((riga) => normalizzaRiga(riga))
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  return normalizzaRiga(value);
 }
 
 function getTotaliPdf(preventivo = {}) {
@@ -292,20 +314,26 @@ function calcolaSubtotaleCapitoloPdf(righe = [], titoloIndex = 0) {
   return Number(totale.toFixed(2));
 }
 
-function creaDesignazionePdf({ titolo = "", note = [], descrizione = "" } = {}) {
+function creaDesignazionePdf({ titolo = "", note = [], descrizione = "", sommano = "" } = {}) {
+  const titoloPdf = normalizzaTestoPdf(titolo);
+  const notePdf = note.map((nota) => normalizzaTestoPdf(nota, { preservaRighe: true })).filter(Boolean);
+  const descrizionePdf = normalizzaTestoPdf(descrizione);
+  const sommanoPdf = normalizzaTestoPdf(sommano);
   const blocchi = [
-    titolo ? String(titolo).trim() : "",
-    ...note.map((nota) => String(nota || "").trim()).filter(Boolean),
-    String(descrizione || "").trim(),
+    titoloPdf,
+    ...notePdf,
+    descrizionePdf,
+    sommanoPdf,
   ].filter(Boolean);
 
   return {
     content: blocchi.join("\n\n"),
     styles: { fillColor: [255, 255, 255], halign: "left" },
     pdfDesignazione: {
-      titolo: titolo ? String(titolo).trim() : "",
-      note: note.map((nota) => String(nota || "").trim()).filter(Boolean),
-      descrizione: String(descrizione || "").trim(),
+      titolo: titoloPdf,
+      note: notePdf,
+      descrizione: descrizionePdf,
+      sommano: sommanoPdf,
     },
   };
 }
@@ -322,6 +350,9 @@ function calcolaAltezzaDesignazionePdf(doc, designazione = {}, maxWidth = 77.6) 
   }
   if (designazione.descrizione) {
     altezza += doc.splitTextToSize(designazione.descrizione, maxWidth).length * 3.3;
+  }
+  if (designazione.sommano) {
+    altezza += 4.2;
   }
   return Math.max(7, altezza + 1.5);
 }
@@ -384,7 +415,8 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
   y += 10;
 
   [["Cliente:", getClienteNome(preventivo, clientiArchivio)], ["Via:", getClienteVia(preventivo, clientiArchivio)], ["Oggetto:", preventivo.descrizione || ""], ["Commessa:", formatNumeroPreventivo(preventivo.numero)]].forEach(([label, value]) => {
-    const righeValore = doc.splitTextToSize(String(value), 164);
+    const valorePdf = normalizzaTestoPdf(value);
+    const righeValore = doc.splitTextToSize(valorePdf, 164);
     doc.setFont(undefined, "bolditalic");
     doc.setFontSize(8.3);
     doc.text(label, 8, y);
@@ -450,16 +482,16 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
           titolo: titoloDesignazione,
           note: noteDesignazione,
           descrizione: rigaPdf.descrizione || "",
+          sommano: `SOMMANO a ${getUnitaRiga(rigaPdf)}`,
         }),
         formatMisuraPdf(rigaPdf, "partiUguali"),
         formatMisuraPdf(rigaPdf, "lunghezza"),
         formatMisuraPdf(rigaPdf, "larghezza"),
         formatMisuraPdf(rigaPdf, "altezzaPeso"),
-        "",
-        "",
-        "",
+        formatNumeroConDecimali(valori.quantita),
+        formatEuro(valori.prezzoUnitario),
+        formatEuro(valori.importo),
       ],
-      ["", `SOMMANO a ${getUnitaRiga(rigaPdf)}`, "", "", "", "", formatNumeroConDecimali(valori.quantita), formatEuro(valori.prezzoUnitario), formatEuro(valori.importo)],
     );
     titoloDesignazione = "";
     noteDesignazione = [];
@@ -469,13 +501,16 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
 
   autoTable(doc, {
     startY: y,
-    head: [[{ content: "Num.Ord.\nTARIFFA", rowSpan: 2 }, { content: "DESIGNAZIONE DEI LAVORI", rowSpan: 2 }, { content: "D I M E N S I O N I", colSpan: 4 }, { content: "Quantita", rowSpan: 2 }, { content: "I M P O R T I", colSpan: 2 }], ["par.ug.", "lung.", "larg.", "H/peso", "unitario", "TOTALE"]],
+    head: [[{ content: "Num.Ord.\nTARIFFA", rowSpan: 2 }, { content: "DESIGNAZIONE DEI LAVORI", rowSpan: 2 }, { content: "D I M E N S I O N I", colSpan: 4 }, { content: "Quantit\u00e0", rowSpan: 2 }, { content: "I M P O R T I", colSpan: 2 }], ["par.ug.", "lung.", "larg.", "H/peso", "unitario", "TOTALE"]],
     body: computoRows,
     theme: "grid",
     styles: { fontSize: 7.2, cellPadding: { top: 1.3, right: 0.8, bottom: 1.3, left: 0.8 }, overflow: "linebreak", valign: "top", textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: { top: 0, right: 0.12, bottom: 0, left: 0.12 } },
     headStyles: { fillColor: [244, 177, 131], textColor: [0, 0, 0], fontStyle: "bold", halign: "center", lineColor: [0, 0, 0], lineWidth: 0.15 },
     columnStyles: { 0: { cellWidth: 15, halign: "center" }, 1: { cellWidth: 80 }, 2: { cellWidth: 12, halign: "center" }, 3: { cellWidth: 12, halign: "right" }, 4: { cellWidth: 12, halign: "right" }, 5: { cellWidth: 12, halign: "right" }, 6: { cellWidth: 12, halign: "right" }, 7: { cellWidth: 15, halign: "right" }, 8: { cellWidth: 16, halign: "right" } },
-    margin: { left: 8, right: 8 },
+    margin: { top: 14, left: 8, right: 8, bottom: 18 },
+    pageBreak: "auto",
+    rowPageBreak: "avoid",
+    showHead: "everyPage",
     didParseCell: (data) => {
       const rawRow = data.row.raw || [];
       const isSommano = typeof rawRow[1] === "string" && rawRow[1].startsWith("SOMMANO");
@@ -489,6 +524,9 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
       if (data.row.section === "body" && isSommano) {
         data.cell.styles.fontStyle = data.column.index === 1 ? "italic" : "normal";
         if (data.column.index === 1) data.cell.styles.halign = "right";
+      }
+      if (data.row.section === "body" && data.column.index >= 6) {
+        data.cell.styles.valign = "bottom";
       }
     },
     didDrawCell: (data) => {
@@ -525,6 +563,13 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
         doc.setTextColor(0, 0, 0);
         doc.text(doc.splitTextToSize(designazione.descrizione, maxWidth), x, textY);
       }
+
+      if (designazione.sommano) {
+        doc.setFont(undefined, "italic");
+        doc.setFontSize(7.2);
+        doc.setTextColor(0, 0, 0);
+        doc.text(designazione.sommano, data.cell.x + data.cell.width - 1.2, data.cell.y + data.cell.height - 2.4, { align: "right" });
+      }
     },
   });
 
@@ -544,9 +589,9 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
   y = totaleY + 10.2;
 
   [
-    ["CONDIZIONI DI FORNITURA:", [`- Importi IVA esclusa. Aliquota IVA applicata: ${formatNumero(totaliPdf.ivaAliquota)}%`, "- Pagamento: da concordare.", "- Validita offerta: 15 giorni", "- Inizio lavori: da concordare."]],
+    ["CONDIZIONI DI FORNITURA:", [`- Importi IVA esclusa. Aliquota IVA applicata: ${formatNumero(totaliPdf.ivaAliquota)}%`, "- Pagamento: da concordare.", "- Validit\u00e0 offerta: 15 giorni", "- Inizio lavori: da concordare."]],
     ["ESCLUSIONI:", ["- La stesura e presentazione agli Enti preposti delle pratiche necessarie all'esecuzione delle opere ed ogni altro annesso.", "- Oneri per richieste di allacciamenti agli enti competenti ed eventuali opere edili accessorie.", "- Eventuali opere aggiuntive e non espressamente indicate nella presente offerta, richieste dagli Enti interessati.", "- Tutto quanto non espressamente citato nella presente offerta."]],
-    ["NOTE:", ["- Eventuali lavori extra eseguiti, non espressamente citati nella presente, saranno richiesti dalla Committente e regolarmente assegnati previa accettazione di relativo preventivo Extra dedicato.", '- I lavori oggetto del presente preventivo vengono affidati al Fornitore "A MISURA".', "- La Committente dovra mettere a disposizione dell'Impresa energia elettrica e acqua, ai fini dell'esecuzione delle opere."]],
+    ["NOTE:", ["- Eventuali lavori extra eseguiti, non espressamente citati nella presente, saranno richiesti dalla Committente e regolarmente assegnati previa accettazione di relativo preventivo Extra dedicato.", '- I lavori oggetto del presente preventivo vengono affidati al Fornitore "A MISURA".', "- La Committente dovr\u00e0 mettere a disposizione dell'Impresa energia elettrica e acqua, ai fini dell'esecuzione delle opere."]],
   ].forEach(([titolo, righeTesto]) => {
     if (y > 245) {
       doc.addPage();

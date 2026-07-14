@@ -9,6 +9,25 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-13
 
+### Revisione grafica PDF Preventivi
+
+Correzioni:
+
+- Accorpata ogni lavorazione in una riga PDF indivisibile per evitare descrizioni e `SOMMANO` separati dai salti pagina.
+- Normalizzate spaziature e refusi tipografici in stampa PDF senza modificare i dati PostgreSQL.
+- Corretti `PAVIMENTAZIONEESTERNA`, `CATIOIE`, spazi prima delle virgole e spazi dopo `SUB.`.
+- Aggiornate le etichette PDF `Quantit\u00e0`, `Validit\u00e0` e `dovr\u00e0`.
+- Mantenuti invariati quantit\u00e0, prezzi, importi e totale documento.
+
+Test eseguiti:
+
+- Rigenerazione PDF reale `PREV-26195 -Rev00` per CONDOMINIO LUNA.
+- Rendering PNG di tutte le pagine del PDF rigenerato.
+- Verifica testuale di refusi rimossi e totale `60.002,00`.
+- Build frontend completata.
+
+---
+
 ### Correzione layout Titolo capitolo PDF Preventivi
 
 Correzioni:
