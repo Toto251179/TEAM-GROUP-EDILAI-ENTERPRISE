@@ -1,5 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, FileText, Folder, MoreVertical } from "lucide-react";
+import {
+  BriefcaseBusiness,
+  ChevronLeft,
+  ChevronRight,
+  CirclePause,
+  CirclePlay,
+  Download,
+  Euro,
+  FileText,
+  Folder,
+  MoreVertical,
+  RotateCcw,
+  Save,
+  Search,
+  Trophy,
+} from "lucide-react";
 import { api } from "../services/api";
 
 const STATI = ["In Corso", "Pianificato", "Completato", "Sospeso", "Annullato"];
@@ -26,6 +41,16 @@ function formatEuro(value) {
   })}`;
 }
 
+function statoCanonico(stato) {
+  const normalizzato = String(stato || "").trim().toLowerCase();
+
+  if (["completato", "completata", "concluso", "conclusa", "chiuso", "chiusa"].includes(normalizzato)) return "Completato";
+  if (["sospeso", "sospesa", "pausa", "in pausa"].includes(normalizzato)) return "Sospeso";
+  if (["annullato", "annullata", "cancellato", "cancellata", "eliminato", "eliminata"].includes(normalizzato)) return "Annullato";
+  if (["pianificato", "pianificata", "programmato", "programmata"].includes(normalizzato)) return "Pianificato";
+  return "In Corso";
+}
+
 function formatDate(value) {
   if (!value) return "";
   return new Date(value).toLocaleDateString("it-IT");
@@ -39,7 +64,7 @@ function dividiIndirizzo(indirizzo) {
 }
 
 function statoVisuale(stato) {
-  const statoNormalizzato = stato || "In Corso";
+  const statoNormalizzato = statoCanonico(stato);
   const palette = {
     "In Corso": { background: "#dbeafe", color: "#1d4ed8" },
     Pianificato: { background: "#e2e8f0", color: "#475569" },
@@ -110,7 +135,7 @@ function Cantieri() {
           .join(" ")
           .toLowerCase();
         const passaRicerca = testo.includes(ricerca.toLowerCase());
-        const passaStato = filtroStato === "Tutti" || cantiere.stato === filtroStato;
+        const passaStato = filtroStato === "Tutti" || statoCanonico(cantiere.stato) === filtroStato;
 
         return passaRicerca && passaStato;
       }),
@@ -120,9 +145,9 @@ function Cantieri() {
   const riepilogo = useMemo(
     () => ({
       totale: cantieriFiltrati.length,
-      inCorso: cantieriFiltrati.filter((cantiere) => cantiere.stato === "In Corso").length,
-      sospesi: cantieriFiltrati.filter((cantiere) => cantiere.stato === "Sospeso").length,
-      completati: cantieriFiltrati.filter((cantiere) => cantiere.stato === "Completato").length,
+      inCorso: cantieriFiltrati.filter((cantiere) => statoCanonico(cantiere.stato) === "In Corso").length,
+      sospesi: cantieriFiltrati.filter((cantiere) => statoCanonico(cantiere.stato) === "Sospeso").length,
+      completati: cantieriFiltrati.filter((cantiere) => statoCanonico(cantiere.stato) === "Completato").length,
       importo: cantieriFiltrati.reduce((totale, cantiere) => totale + Number(cantiere.importo || 0), 0),
     }),
     [cantieriFiltrati],
@@ -295,14 +320,6 @@ function Cantieri() {
     azione(cantiere);
   };
 
-  const card = {
-    background: "white",
-    padding: "20px",
-    borderRadius: "8px",
-    textAlign: "center",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-  };
-
   const actionButton = {
     display: "inline-flex",
     alignItems: "center",
@@ -324,6 +341,7 @@ function Cantieri() {
     .cantieri-enterprise {
       background: #f6f8fb;
       color: #0f172a;
+      min-width: 0;
       padding-bottom: 28px;
     }
 
@@ -332,6 +350,131 @@ function Cantieri() {
     .cantieri-enterprise h3,
     .cantieri-enterprise p {
       margin-top: 0;
+    }
+
+    .cantieri-heading {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .cantieri-heading h1 {
+      margin: 0 0 5px;
+      font-size: 30px;
+      line-height: 1.12;
+    }
+
+    .cantieri-heading p {
+      color: #64748b;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .cantieri-stats {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(170px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .cantieri-stat-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      min-height: 92px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 17px 18px;
+      background: #ffffff;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+    }
+
+    .cantieri-stat-card span {
+      display: block;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .cantieri-stat-card strong {
+      display: block;
+      margin-top: 7px;
+      color: #0f172a;
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .cantieri-stat-card.value strong {
+      font-size: 21px;
+    }
+
+    .cantieri-stat-icon {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      flex: 0 0 42px;
+      place-items: center;
+      border-radius: 8px;
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
+
+    .cantieri-form-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 18px;
+      margin-bottom: 18px;
+      background: #ffffff;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+    }
+
+    .cantieri-form-card h2 {
+      margin-bottom: 14px;
+      font-size: 20px;
+    }
+
+    .cantieri-form-grid {
+      display: grid;
+      grid-template-columns: minmax(220px, 1.4fr) minmax(220px, 1.2fr) minmax(220px, 1.2fr) minmax(220px, 1.2fr);
+      gap: 10px;
+    }
+
+    .cantieri-form-grid input,
+    .cantieri-form-grid select,
+    .cantieri-form-card textarea {
+      width: 100%;
+      border-color: #cbd5e1;
+      border-radius: 6px;
+    }
+
+    .cantieri-form-card textarea {
+      margin-top: 10px;
+    }
+
+    .cantieri-form-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+
+    .cantieri-form-actions button,
+    .cantieri-toolbar button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+    }
+
+    .cantieri-form-actions .secondary {
+      border-color: #bfdbfe;
+      background: #ffffff;
+      color: #1d4ed8;
     }
 
     .cantieri-list-card {
@@ -372,6 +515,18 @@ function Cantieri() {
       flex-wrap: wrap;
     }
 
+    .cantieri-search {
+      position: relative;
+    }
+
+    .cantieri-search svg {
+      position: absolute;
+      top: 50%;
+      left: 11px;
+      color: #64748b;
+      transform: translateY(-50%);
+    }
+
     .cantieri-toolbar input,
     .cantieri-toolbar select {
       height: 38px;
@@ -385,6 +540,7 @@ function Cantieri() {
 
     .cantieri-toolbar input {
       width: min(420px, 42vw);
+      padding-left: 34px;
     }
 
     .cantieri-toolbar button,
@@ -407,7 +563,7 @@ function Cantieri() {
 
     .cantieri-table {
       width: 100%;
-      min-width: 1180px;
+      min-width: 1220px;
       border-collapse: separate;
       border-spacing: 0;
       text-align: left;
@@ -431,6 +587,22 @@ function Cantieri() {
       font-size: 14px;
       padding: 14px;
       vertical-align: middle;
+    }
+
+    .cantieri-table th:nth-child(1),
+    .cantieri-table td:nth-child(1) {
+      width: 28%;
+    }
+
+    .cantieri-table th:nth-child(2),
+    .cantieri-table td:nth-child(2) {
+      width: 20%;
+    }
+
+    .cantieri-table th:nth-child(6),
+    .cantieri-table td:nth-child(6) {
+      width: 130px;
+      text-align: right;
     }
 
     .cantieri-row-title {
@@ -492,6 +664,11 @@ function Cantieri() {
       padding: 7px 10px;
       text-align: center;
       white-space: nowrap;
+    }
+
+    .cantieri-status option {
+      color: #0f172a;
+      background: #ffffff;
     }
 
     .cantieri-actions {
@@ -598,6 +775,14 @@ function Cantieri() {
     }
 
     @media (max-width: 1024px) {
+      .cantieri-stats {
+        grid-template-columns: repeat(2, minmax(170px, 1fr));
+      }
+
+      .cantieri-form-grid {
+        grid-template-columns: repeat(2, minmax(220px, 1fr));
+      }
+
       .cantieri-list-header {
         flex-direction: column;
       }
@@ -613,6 +798,16 @@ function Cantieri() {
     }
 
     @media (max-width: 720px) {
+      .cantieri-heading {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .cantieri-stats,
+      .cantieri-form-grid {
+        grid-template-columns: 1fr;
+      }
+
       .cantieri-table-shell {
         display: none;
       }
@@ -667,44 +862,57 @@ function Cantieri() {
   return (
     <div className="cantieri-enterprise">
       <style>{styles}</style>
-      <h1>Cantieri Enterprise</h1>
+      <div className="cantieri-heading">
+        <div>
+          <h1>Cantieri Enterprise</h1>
+          <p>Gestione operativa dei cantieri collegata ai dati PostgreSQL.</p>
+        </div>
+      </div>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
-          gap: "20px",
-          marginBottom: "25px",
-        }}
-      >
-        <div style={card}>
-          <h3>Cantieri</h3>
-          <h2>{riepilogo.totale}</h2>
+      <div className="cantieri-stats">
+        <div className="cantieri-stat-card">
+          <div>
+            <span>Cantieri</span>
+            <strong>{riepilogo.totale}</strong>
+          </div>
+          <span className="cantieri-stat-icon"><BriefcaseBusiness size={22} /></span>
         </div>
-        <div style={card}>
-          <h3>In Corso</h3>
-          <h2>{riepilogo.inCorso}</h2>
+        <div className="cantieri-stat-card">
+          <div>
+            <span>In Corso</span>
+            <strong>{riepilogo.inCorso}</strong>
+          </div>
+          <span className="cantieri-stat-icon"><CirclePlay size={22} /></span>
         </div>
-        <div style={card}>
-          <h3>Sospesi</h3>
-          <h2>{riepilogo.sospesi}</h2>
+        <div className="cantieri-stat-card">
+          <div>
+            <span>Completati</span>
+            <strong>{riepilogo.completati}</strong>
+          </div>
+          <span className="cantieri-stat-icon"><Trophy size={22} /></span>
         </div>
-        <div style={card}>
-          <h3>Completati</h3>
-          <h2>{riepilogo.completati}</h2>
+        <div className="cantieri-stat-card">
+          <div>
+            <span>Sospesi</span>
+            <strong>{riepilogo.sospesi}</strong>
+          </div>
+          <span className="cantieri-stat-icon"><CirclePause size={22} /></span>
         </div>
-        <div style={card}>
-          <h3>Valore</h3>
-          <h2>{formatEuro(riepilogo.importo)}</h2>
+        <div className="cantieri-stat-card value">
+          <div>
+            <span>Valore</span>
+            <strong>{formatEuro(riepilogo.importo)}</strong>
+          </div>
+          <span className="cantieri-stat-icon"><Euro size={22} /></span>
         </div>
       </div>
 
       {errore && <p style={{ color: "crimson", marginBottom: "15px" }}>{errore}</p>}
 
-      <div style={{ background: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
+      <div className="cantieri-form-card">
         <h2>{form.id ? "Modifica Cantiere" : "Nuovo Cantiere"}</h2>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: "12px" }}>
+        <div className="cantieri-form-grid">
           <input placeholder="Nome cantiere" value={form.nome} onChange={(e) => aggiornaForm("nome", e.target.value)} />
 
           <select value={form.clienteId} onChange={(e) => selezionaCliente(e.target.value)}>
@@ -750,12 +958,11 @@ function Cantieri() {
           placeholder="Note cantiere"
           value={form.note}
           onChange={(e) => aggiornaForm("note", e.target.value)}
-          style={{ width: "100%", marginTop: "12px" }}
         />
 
-        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "18px" }}>
-          <button onClick={salvaCantiere}>{form.id ? "Salva Modifiche" : "Salva Cantiere"}</button>
-          <button onClick={resetForm}>Nuovo / Annulla</button>
+        <div className="cantieri-form-actions">
+          <button onClick={salvaCantiere}><Save size={16} /> {form.id ? "Salva Modifiche" : "Salva Cantiere"}</button>
+          <button className="secondary" onClick={resetForm}><RotateCcw size={16} /> Nuovo / Annulla</button>
         </div>
       </div>
 
@@ -766,18 +973,21 @@ function Cantieri() {
             <p>Gestione completa dei cantieri aziendali</p>
           </div>
           <div className="cantieri-toolbar">
-            <input
-              placeholder="Ricerca per cantiere, cliente, indirizzo o nota"
-              value={ricerca}
-              onChange={(e) => aggiornaRicerca(e.target.value)}
-            />
+            <div className="cantieri-search">
+              <Search size={16} />
+              <input
+                placeholder="Ricerca per cantiere, cliente, indirizzo o nota"
+                value={ricerca}
+                onChange={(e) => aggiornaRicerca(e.target.value)}
+              />
+            </div>
             <select value={filtroStato} onChange={(e) => aggiornaFiltroStato(e.target.value)}>
               <option value="Tutti">Tutti gli stati</option>
               {STATI.map((stato) => (
                 <option key={stato}>{stato}</option>
               ))}
             </select>
-            <button onClick={esportaCantieri}>Esporta CSV</button>
+            <button onClick={esportaCantieri}><Download size={16} /> Esporta CSV</button>
           </div>
         </div>
 
@@ -812,7 +1022,8 @@ function Cantieri() {
 
                   {cantieriPagina.map((cantiere) => {
                     const [indirizzoRigaUno, indirizzoRigaDue] = dividiIndirizzo(cantiere.indirizzo);
-                    const statoStyle = statoVisuale(cantiere.stato);
+                    const stato = statoCanonico(cantiere.stato);
+                    const statoStyle = statoVisuale(stato);
 
                     return (
                       <tr key={cantiere.id}>
@@ -843,7 +1054,7 @@ function Cantieri() {
                         <td>
                           <select
                             className="cantieri-status"
-                            value={cantiere.stato || "In Corso"}
+                            value={stato}
                             onChange={(e) => aggiornaStato(cantiere, e.target.value)}
                             style={statoStyle}
                           >
@@ -885,7 +1096,8 @@ function Cantieri() {
             <div className="cantieri-mobile-list">
               {cantieriPagina.map((cantiere) => {
                 const [indirizzoRigaUno, indirizzoRigaDue] = dividiIndirizzo(cantiere.indirizzo);
-                const statoStyle = statoVisuale(cantiere.stato);
+                const stato = statoCanonico(cantiere.stato);
+                const statoStyle = statoVisuale(stato);
 
                 return (
                   <article className="cantieri-mobile-card" key={`mobile-${cantiere.id}`}>
@@ -923,7 +1135,7 @@ function Cantieri() {
                         <span className="cantieri-secondary">Stato</span>
                         <select
                           className="cantieri-status"
-                          value={cantiere.stato || "In Corso"}
+                          value={stato}
                           onChange={(e) => aggiornaStato(cantiere, e.target.value)}
                           style={statoStyle}
                         >

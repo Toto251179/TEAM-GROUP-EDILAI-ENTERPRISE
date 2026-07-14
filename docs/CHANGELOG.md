@@ -7,6 +7,28 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 # Versione 1.0
 
+## 2026-07-14
+
+### Correzione grafica e KPI Cantieri
+
+Correzioni:
+
+- Ridisegnato il riepilogo superiore del modulo Cantieri con card operative piu leggibili.
+- I KPI Cantieri ora mostrano i valori reali caricati da PostgreSQL/API.
+- Normalizzate le varianti stato `Completata`, `Completato`, `cancellato` e sinonimi per conteggi, filtri e badge.
+- Migliorato il layout del form Nuovo Cantiere e della toolbar elenco con icone e spaziature coerenti.
+
+Test eseguiti:
+
+- Verifica backend health con database PostgreSQL connesso.
+- Verifica API `GET /api/cantieri` con 5 cantieri reali.
+- Verifica CRUD temporaneo `POST`, `GET`, `PUT` e `DELETE /api/cantieri`.
+- Verifica browser pagina `/cantieri` con KPI: 5 cantieri, 3 in corso, 1 completato, 0 sospesi, EUR 14.313,98.
+- Verifica console browser senza errori.
+- Build frontend completata.
+
+---
+
 ## 2026-07-13
 
 ### Correzione duplicazione voci Preventivi
