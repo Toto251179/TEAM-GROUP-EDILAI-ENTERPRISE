@@ -9,6 +9,23 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-14
 
+### Correzione formato importi Cantieri
+
+Correzioni:
+
+- Uniformato il formato degli importi nel modulo Cantieri a `EUR 1.234,56`.
+- Applicato il separatore migliaia anche agli importi a quattro cifre nell'elenco, nelle card e nella vista mobile.
+
+Test eseguiti:
+
+- Verifica formatter con `EUR 1.839,67`, `EUR 3.549,31`, `EUR 1.500,00`, `EUR 7.325,00`, `EUR 100,00`, `EUR 14.313,98`.
+- Verifica API `GET /api/cantieri` con 5 cantieri reali.
+- Verifica browser pagina `/cantieri` senza formati vecchi `1839,67 EUR` o `EUR 1839,67`.
+- Verifica console browser senza errori.
+- Build frontend completata.
+
+---
+
 ### Correzione formato valuta PDF Preventivi
 
 Correzioni:

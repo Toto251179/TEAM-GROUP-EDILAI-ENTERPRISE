@@ -35,10 +35,14 @@ const cantiereVuoto = {
 };
 
 function formatEuro(value) {
-  return `EUR ${Number(value || 0).toLocaleString("it-IT", {
+  const importo = Number(value || 0).toLocaleString("it-IT", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })}`;
+  });
+  const [intero, decimali = "00"] = importo.split(",");
+  const interoConMigliaia = intero.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+  return `EUR ${interoConMigliaia},${decimali}`;
 }
 
 function statoCanonico(stato) {
