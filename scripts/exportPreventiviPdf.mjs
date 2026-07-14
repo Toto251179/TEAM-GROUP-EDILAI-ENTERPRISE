@@ -24,7 +24,10 @@ function formatEuro(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-  return `${importo} EUR`.replace("EUR", "€");
+  const [intero, decimali = "00"] = importo.split(",");
+  const interoConMigliaia = intero.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+  return `\u20ac ${interoConMigliaia},${decimali}`;
 }
 
 function formatNumero(value) {

@@ -128,12 +128,10 @@ function formatEuro(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+  const [intero, decimali = "00"] = importo.split(",");
+  const interoConMigliaia = intero.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 
-  if (value !== Symbol.for("team-group-unused-format")) return `${importo} €`;
-  return `${Number(value || 0).toLocaleString("it-IT", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} €`;
+  return `\u20ac ${interoConMigliaia},${decimali}`;
 }
 
 function formatDate(value) {

@@ -14,10 +14,14 @@ import {
 const rootDir = process.cwd();
 
 function formatEuro(value) {
-  return `${Number(value || 0).toLocaleString("it-IT", {
+  const importo = Number(value || 0).toLocaleString("it-IT", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })} EUR`.replace("EUR", "€");
+  });
+  const [intero, decimali = "00"] = importo.split(",");
+  const interoConMigliaia = intero.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+  return `\u20ac ${interoConMigliaia},${decimali}`;
 }
 
 function formatNumero(value) {

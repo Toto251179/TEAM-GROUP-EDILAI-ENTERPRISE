@@ -9,6 +9,24 @@ Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ## 2026-07-14
 
+### Correzione formato valuta PDF Preventivi
+
+Correzioni:
+
+- Uniformato il formato valuta Preventivi a `€ 1.234,56`.
+- Applicato separatore migliaia anche agli importi a quattro cifre, ad esempio `€ 3.200,00`.
+- Allineati motore PDF backend, esportatore PDF batch e generatore PDF frontend legacy.
+
+Test eseguiti:
+
+- Rigenerazione PDF reale `PREV-26196-Rev00`.
+- Rendering PNG del PDF rigenerato.
+- Verifica visiva importi `€ 1.889,64`, `€ 3.968,70` e totale `€ 5.858,34`.
+- Verifica backend health con PostgreSQL connesso.
+- Build frontend completata.
+
+---
+
 ### Correzione grafica e KPI Cantieri
 
 Correzioni:
