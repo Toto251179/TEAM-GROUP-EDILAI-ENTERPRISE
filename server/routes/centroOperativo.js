@@ -51,6 +51,9 @@ async function ensureSchema() {
   await query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS tipologia_cliente TEXT");
   await query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS latitudine NUMERIC(10, 7)");
   await query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS longitudine NUMERIC(10, 7)");
+  await query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS geocode_status TEXT");
+  await query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS geocode_error TEXT");
+  await query("ALTER TABLE clienti ADD COLUMN IF NOT EXISTS geocode_attempted_at TIMESTAMPTZ");
 }
 
 function baseWhere(params, filters = {}) {
@@ -330,41 +333,80 @@ async function geocodeCliente(cliente) {
     throw error;
   }
 
+  const address = addressFromCliente(toCamel(cliente)).trim();
+  if (!address) {
+    const error = new Error("Indirizzo incompleto.");
+    error.status = 422;
+    throw error;
+  }
+
   const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
-  url.searchParams.set("address", addressFromCliente(toCamel(cliente)));
+  url.searchParams.set("address", address);
+  url.searchParams.set("region", "it");
+  url.searchParams.set("language", "it");
   url.searchParams.set("key", env.googleMaps.apiKey);
   const response = await fetch(url);
   const data = await response.json();
   const location = data.results?.[0]?.geometry?.location;
-  if (!location) {
-    const error = new Error(data.error_message || "Coordinate non trovate.");
+  if (!response.ok || data.status !== "OK" || !location) {
+    const error = new Error(data.error_message || (data.status === "ZERO_RESULTS" ? "Indirizzo non riconosciuto." : `Geocodifica: ${data.status || response.status}`));
     error.status = 422;
     throw error;
   }
   return location;
 }
 
-router.post("/geocode-missing", asyncHandler(async (_req, res) => {
-  if (!env.googleMaps.apiKey) return res.status(400).json({ message: "Google Maps non configurato." });
+router.post("/geocode-missing", asyncHandler(async (req, res) => {
+  if (!env.googleMaps.apiKey) return res.status(400).json({ message: "Google Maps non configurato sul server." });
+
+  const limit = Math.min(Math.max(Number(req.body?.limit) || 25, 1), 50);
+  const retryErrors = req.body?.retryErrors === true;
+  const statusCondition = retryErrors ? "TRUE" : "COALESCE(c.geocode_status, '') <> 'errore'";
   const result = await query(
-    `${selectClientiSql("c.indirizzo IS NOT NULL AND (c.latitudine IS NULL OR c.longitudine IS NULL)")} LIMIT 25`,
+    `${selectClientiSql(`c.indirizzo IS NOT NULL AND BTRIM(c.indirizzo) <> '' AND (c.latitudine IS NULL OR c.longitudine IS NULL) AND ${statusCondition}`)} LIMIT ${limit}`,
     [],
   );
+
   const risultati = [];
   for (const row of result.rows) {
     try {
       const location = await geocodeCliente(row);
-      await query("UPDATE clienti SET latitudine = $2, longitudine = $3, updated_at = NOW() WHERE id = $1", [row.id, location.lat, location.lng]);
+      await query(
+        `UPDATE clienti SET latitudine = $2, longitudine = $3, geocode_status = 'trovato',
+         geocode_error = NULL, geocode_attempted_at = NOW(), updated_at = NOW() WHERE id = $1`,
+        [row.id, location.lat, location.lng],
+      );
       risultati.push({ id: row.id, stato: "trovato" });
     } catch (error) {
-      risultati.push({ id: row.id, stato: "errore", errore: error.message });
+      const message = String(error.message || "Coordinate non trovate").slice(0, 500);
+      await query(
+        `UPDATE clienti SET geocode_status = 'errore', geocode_error = $2,
+         geocode_attempted_at = NOW(), updated_at = NOW() WHERE id = $1`,
+        [row.id, message],
+      );
+      risultati.push({ id: row.id, stato: "errore", errore: message });
     }
   }
+
+  const conteggi = await query(
+    `SELECT
+       COUNT(*) FILTER (WHERE (latitudine IS NULL OR longitudine IS NULL)
+         AND indirizzo IS NOT NULL AND BTRIM(indirizzo) <> ''
+         AND COALESCE(geocode_status, '') <> 'errore')::INTEGER AS rimanenti,
+       COUNT(*) FILTER (WHERE (latitudine IS NULL OR longitudine IS NULL)
+         AND COALESCE(geocode_status, '') = 'errore')::INTEGER AS da_verificare,
+       COUNT(*) FILTER (WHERE latitudine IS NOT NULL AND longitudine IS NOT NULL)::INTEGER AS con_coordinate
+     FROM clienti`,
+  );
+
   res.json({
     elaborati: risultati.length,
     trovati: risultati.filter((item) => item.stato === "trovato").length,
     nonTrovati: risultati.filter((item) => item.stato !== "trovato").length,
     errori: risultati.filter((item) => item.stato === "errore").length,
+    rimanenti: Number(conteggi.rows[0]?.rimanenti || 0),
+    daVerificare: Number(conteggi.rows[0]?.da_verificare || 0),
+    conCoordinate: Number(conteggi.rows[0]?.con_coordinate || 0),
     risultati,
   });
 }));
