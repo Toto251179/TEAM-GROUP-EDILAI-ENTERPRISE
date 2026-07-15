@@ -34,6 +34,32 @@ function amministratoreVisibile(cliente) {
   return valoreNonVuoto(cliente?.amministratore) || valoreNonVuoto(cliente?.associazione) || valoreNonVuoto(cliente?.referente);
 }
 
+function normalizzaCoordinata(value) {
+  const numero = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(numero) ? numero : null;
+}
+
+function indirizzoMapsCliente(cliente) {
+  return [
+    valoreCliente(cliente, "via", "indirizzo"),
+    cliente?.cap,
+    cliente?.comune,
+    cliente?.provincia,
+    "Italia",
+  ]
+    .map((parte) => String(parte ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function posizioneMapsCliente(cliente) {
+  const latitudine = normalizzaCoordinata(cliente?.latitudine);
+  const longitudine = normalizzaCoordinata(cliente?.longitudine);
+
+  if (latitudine !== null && longitudine !== null) return `${latitudine},${longitudine}`;
+  return indirizzoMapsCliente(cliente);
+}
+
 function esportaCsv(nomeFile, intestazioni, righe) {
   const escapeCsv = (valore) => `"${String(valore ?? "").replaceAll('"', '""')}"`;
   const contenuto = [intestazioni, ...righe]
@@ -390,6 +416,50 @@ function Clienti() {
     );
   };
 
+  const apriClientiGoogleMaps = () => {
+    const clientiConPosizione = clientiFiltrati
+      .map((cliente) => ({
+        cliente,
+        posizione: posizioneMapsCliente(cliente),
+      }))
+      .filter((item) => item.posizione);
+
+    if (clientiConPosizione.length === 0) {
+      setErrore("Nessun cliente con indirizzo o coordinate da aprire su Google Maps.");
+      setMessaggio("");
+      return;
+    }
+
+    const limiteTappe = 10;
+    const tappe = clientiConPosizione.slice(0, limiteTappe);
+
+    let url;
+    if (tappe.length === 1) {
+      url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(tappe[0].posizione)}`;
+    } else {
+      const [origine, ...resto] = tappe;
+      const destinazione = resto[resto.length - 1];
+      const intermedie = resto.slice(0, -1).map((item) => item.posizione).join("|");
+      const params = new URLSearchParams({
+        api: "1",
+        origin: origine.posizione,
+        destination: destinazione.posizione,
+        travelmode: "driving",
+      });
+
+      if (intermedie) params.set("waypoints", intermedie);
+      url = `https://www.google.com/maps/dir/?${params.toString()}`;
+    }
+
+    window.open(url, "_blank", "noopener,noreferrer");
+    setErrore("");
+    setMessaggio(
+      clientiConPosizione.length > limiteTappe
+        ? `Google Maps aperto con i primi ${limiteTappe} clienti filtrati su ${clientiConPosizione.length}. Usa la ricerca per restringere la zona.`
+        : `Google Maps aperto con ${clientiConPosizione.length} clienti.`,
+    );
+  };
+
   const fileToBase64 = (file) =>
     new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -593,6 +663,7 @@ function Clienti() {
                 onChange={(e) => anteprimaImportExcel(e.target.files?.[0])}
               />
             </label>
+            <button type="button" onClick={apriClientiGoogleMaps}>Google Maps</button>
             <button onClick={esportaClienti}>Esporta CSV</button>
           </div>
         </div>
