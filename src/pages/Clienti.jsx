@@ -39,6 +39,14 @@ function normalizzaCoordinata(value) {
   return Number.isFinite(numero) ? numero : null;
 }
 
+function coordinateCliente(cliente) {
+  const latitudine = normalizzaCoordinata(cliente?.latitudine);
+  const longitudine = normalizzaCoordinata(cliente?.longitudine);
+
+  if (latitudine === null || longitudine === null) return null;
+  return { latitudine, longitudine };
+}
+
 function indirizzoMapsCliente(cliente) {
   return [
     valoreCliente(cliente, "via", "indirizzo"),
@@ -53,11 +61,21 @@ function indirizzoMapsCliente(cliente) {
 }
 
 function posizioneMapsCliente(cliente) {
-  const latitudine = normalizzaCoordinata(cliente?.latitudine);
-  const longitudine = normalizzaCoordinata(cliente?.longitudine);
-
-  if (latitudine !== null && longitudine !== null) return `${latitudine},${longitudine}`;
+  const coordinate = coordinateCliente(cliente);
+  if (coordinate) return `${coordinate.latitudine},${coordinate.longitudine}`;
   return indirizzoMapsCliente(cliente);
+}
+
+function isCondominioCliente(cliente) {
+  const testo = [
+    cliente?.tipologiaCliente,
+    cliente?.ragioneSociale,
+    valoreCliente(cliente, "noteCliente", "note"),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return testo.includes("condominio") || testo.includes("condomini") || testo.includes("cond.");
 }
 
 function esportaCsv(nomeFile, intestazioni, righe) {
@@ -159,6 +177,41 @@ function Clienti() {
     }),
     [cantieri.length, clienti, clientiFiltrati, preventivi.length],
   );
+
+  const clientiCondomini = useMemo(
+    () => clientiFiltrati.filter((cliente) => isCondominioCliente(cliente)),
+    [clientiFiltrati],
+  );
+
+  const condominiConCoordinate = useMemo(
+    () =>
+      clientiCondomini
+        .map((cliente) => ({
+          cliente,
+          coordinate: coordinateCliente(cliente),
+        }))
+        .filter((item) => item.coordinate),
+    [clientiCondomini],
+  );
+
+  const condominiSenzaCoordinate = useMemo(
+    () => clientiCondomini.filter((cliente) => !coordinateCliente(cliente)),
+    [clientiCondomini],
+  );
+
+  const confiniMappaCondomini = useMemo(() => {
+    if (condominiConCoordinate.length === 0) return null;
+
+    const latitudini = condominiConCoordinate.map((item) => item.coordinate.latitudine);
+    const longitudini = condominiConCoordinate.map((item) => item.coordinate.longitudine);
+
+    return {
+      minLatitudine: Math.min(...latitudini),
+      maxLatitudine: Math.max(...latitudini),
+      minLongitudine: Math.min(...longitudini),
+      maxLongitudine: Math.max(...longitudini),
+    };
+  }, [condominiConCoordinate]);
 
   const contaPreventiviCliente = (cliente) =>
     preventivi.filter(
@@ -416,6 +469,26 @@ function Clienti() {
     );
   };
 
+  const posizionePinCondominio = (coordinate) => {
+    if (!confiniMappaCondomini) return { left: "50%", top: "50%" };
+
+    const rangeLatitudine = Math.max(
+      confiniMappaCondomini.maxLatitudine - confiniMappaCondomini.minLatitudine,
+      0.0001,
+    );
+    const rangeLongitudine = Math.max(
+      confiniMappaCondomini.maxLongitudine - confiniMappaCondomini.minLongitudine,
+      0.0001,
+    );
+    const left = 7 + ((coordinate.longitudine - confiniMappaCondomini.minLongitudine) / rangeLongitudine) * 86;
+    const top = 12 + (1 - (coordinate.latitudine - confiniMappaCondomini.minLatitudine) / rangeLatitudine) * 76;
+
+    return {
+      left: `${Math.min(93, Math.max(7, left))}%`,
+      top: `${Math.min(88, Math.max(12, top))}%`,
+    };
+  };
+
   const apriClientiGoogleMaps = () => {
     const clientiConPosizione = clientiFiltrati
       .map((cliente) => ({
@@ -458,6 +531,53 @@ function Clienti() {
         ? `Google Maps aperto con i primi ${limiteTappe} clienti filtrati su ${clientiConPosizione.length}. Usa la ricerca per restringere la zona.`
         : `Google Maps aperto con ${clientiConPosizione.length} clienti.`,
     );
+  };
+
+  const apriCondominiGoogleMaps = (indiceGruppo = 0) => {
+    const condominiConPosizione = clientiCondomini
+      .map((cliente) => ({
+        cliente,
+        posizione: posizioneMapsCliente(cliente),
+      }))
+      .filter((item) => item.posizione);
+
+    if (condominiConPosizione.length === 0) {
+      setErrore("Nessun condominio con indirizzo o coordinate da aprire su Google Maps.");
+      setMessaggio("");
+      return;
+    }
+
+    const limiteTappe = 10;
+    const inizio = indiceGruppo * limiteTappe;
+    const gruppo = condominiConPosizione.slice(inizio, inizio + limiteTappe);
+
+    if (gruppo.length === 0) {
+      setErrore("Gruppo condomini non disponibile.");
+      setMessaggio("");
+      return;
+    }
+
+    let url;
+    if (gruppo.length === 1) {
+      url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(gruppo[0].posizione)}`;
+    } else {
+      const [origine, ...resto] = gruppo;
+      const destinazione = resto[resto.length - 1];
+      const intermedie = resto.slice(0, -1).map((item) => item.posizione).join("|");
+      const params = new URLSearchParams({
+        api: "1",
+        origin: origine.posizione,
+        destination: destinazione.posizione,
+        travelmode: "driving",
+      });
+
+      if (intermedie) params.set("waypoints", intermedie);
+      url = `https://www.google.com/maps/dir/?${params.toString()}`;
+    }
+
+    window.open(url, "_blank", "noopener,noreferrer");
+    setErrore("");
+    setMessaggio(`Google Maps aperto con condomini ${inizio + 1}-${inizio + gruppo.length} di ${condominiConPosizione.length}.`);
   };
 
   const fileToBase64 = (file) =>
@@ -524,6 +644,9 @@ function Clienti() {
     borderRadius: "6px",
   };
 
+  const numeroCondominiApribiliMaps = clientiCondomini.filter((cliente) => posizioneMapsCliente(cliente)).length;
+  const numeroGruppiGoogleMapsCondomini = Math.ceil(numeroCondominiApribiliMaps / 10);
+
   return (
     <div className="clienti-page">
       <h1>Anagrafica Clienti</h1>
@@ -565,6 +688,130 @@ function Clienti() {
 
       {errore && <p style={{ color: "crimson", marginBottom: "15px" }}>{errore}</p>}
       {messaggio && <p style={{ color: "green", marginBottom: "15px" }}>{messaggio}</p>}
+
+      <div style={{ background: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: "14px", alignItems: "flex-start", flexWrap: "wrap", marginBottom: "14px" }}>
+          <div>
+            <h2 style={{ margin: 0 }}>Mappa condomini</h2>
+            <p style={{ margin: "6px 0 0", color: "#64748b" }}>
+              {clientiCondomini.length} condomini trovati nei clienti filtrati, {condominiConCoordinate.length} con coordinate.
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {Array.from({ length: numeroGruppiGoogleMapsCondomini }, (_, index) => (
+              <button key={`maps-condomini-${index}`} type="button" onClick={() => apriCondominiGoogleMaps(index)}>
+                Google Maps {index * 10 + 1}-{Math.min((index + 1) * 10, numeroCondominiApribiliMaps)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: "16px", alignItems: "stretch" }}>
+          <div
+            style={{
+              position: "relative",
+              minHeight: "380px",
+              overflow: "hidden",
+              border: "1px solid #dbe3ef",
+              borderRadius: "8px",
+              background:
+                "linear-gradient(90deg, rgba(148,163,184,0.14) 1px, transparent 1px), linear-gradient(rgba(148,163,184,0.14) 1px, transparent 1px), #f8fafc",
+              backgroundSize: "34px 34px",
+            }}
+          >
+            <div style={{ position: "absolute", inset: "18px", border: "1px dashed #cbd5e1", borderRadius: "8px" }} />
+            {condominiConCoordinate.length === 0 ? (
+              <div style={{ display: "grid", height: "100%", minHeight: "380px", placeItems: "center", color: "#64748b", textAlign: "center", padding: "24px" }}>
+                Nessun condominio con latitudine e longitudine. Inserisci le coordinate nelle anagrafiche per visualizzare i pin.
+              </div>
+            ) : (
+              condominiConCoordinate.map((item, index) => {
+                const posizione = posizionePinCondominio(item.coordinate);
+                const cliente = item.cliente;
+
+                return (
+                  <button
+                    key={`pin-condominio-${cliente.id}`}
+                    type="button"
+                    title={`${cliente.ragioneSociale || "Condominio"} - ${indirizzoMapsCliente(cliente)}`}
+                    onClick={() => modificaCliente(cliente)}
+                    style={{
+                      position: "absolute",
+                      left: posizione.left,
+                      top: posizione.top,
+                      transform: "translate(-50%, -50%)",
+                      width: "34px",
+                      height: "34px",
+                      minWidth: "34px",
+                      padding: 0,
+                      borderRadius: "50%",
+                      border: "2px solid white",
+                      background: "#1d4ed8",
+                      color: "white",
+                      boxShadow: "0 10px 22px rgba(29,78,216,0.28)",
+                      fontWeight: 800,
+                    }}
+                  >
+                    {index + 1}
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", overflow: "hidden", minHeight: "380px" }}>
+            <div style={{ padding: "12px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0", fontWeight: 800 }}>
+              Condomini indicati
+            </div>
+            <div style={{ maxHeight: "330px", overflowY: "auto" }}>
+              {clientiCondomini.length === 0 ? (
+                <p style={{ margin: 0, padding: "14px", color: "#64748b" }}>
+                  Nessun condominio trovato. Verifica il campo Tipo Cliente o la ragione sociale.
+                </p>
+              ) : (
+                clientiCondomini.map((cliente, index) => {
+                  const coordinate = coordinateCliente(cliente);
+
+                  return (
+                    <button
+                      key={`condominio-lista-${cliente.id}`}
+                      type="button"
+                      onClick={() => modificaCliente(cliente)}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "34px 1fr",
+                        gap: "10px",
+                        width: "100%",
+                        border: 0,
+                        borderBottom: "1px solid #eef2f7",
+                        background: "white",
+                        color: "#0f172a",
+                        padding: "11px 12px",
+                        textAlign: "left",
+                      }}
+                    >
+                      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: "28px", height: "28px", borderRadius: "50%", background: coordinate ? "#dbeafe" : "#f1f5f9", color: coordinate ? "#1d4ed8" : "#64748b", fontWeight: 800 }}>
+                        {coordinate ? condominiConCoordinate.findIndex((item) => item.cliente.id === cliente.id) + 1 : "-"}
+                      </span>
+                      <span>
+                        <strong style={{ display: "block" }}>{index + 1}. {cliente.ragioneSociale || "Condominio senza nome"}</strong>
+                        <span style={{ display: "block", marginTop: "3px", color: "#64748b", fontSize: "12px" }}>
+                          {indirizzoMapsCliente(cliente) || "Indirizzo non disponibile"}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            {condominiSenzaCoordinate.length > 0 && (
+              <p style={{ margin: 0, padding: "10px 12px", color: "#b45309", background: "#fff7ed", borderTop: "1px solid #fed7aa" }}>
+                {condominiSenzaCoordinate.length} condomini sono in elenco ma senza pin perche mancano latitudine e longitudine.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
 
       <div className="clienti-form-panel" style={{ background: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
         <h2>{form.id ? "Modifica Cliente" : "Nuovo Cliente"}</h2>
