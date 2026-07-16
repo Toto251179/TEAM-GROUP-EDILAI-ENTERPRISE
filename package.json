@@ -16,7 +16,8 @@
     "db:init": "node server/db/init.js",
     "db:grant": "node server/db/grantPermissions.js",
     "db:migrate": "node server/db/migrate.js",
-    "db:import:veneto": "node server/db/importVenetoOds.js"
+    "db:import:veneto": "node server/db/importVenetoOds.js",
+    "geocode:clienti": "node scripts/geocode-clienti-csv.js"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
