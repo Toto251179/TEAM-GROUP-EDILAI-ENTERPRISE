@@ -1,5 +1,35 @@
-import { useEffect, useMemo, useState } from "react";
-import { api } from "../services/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api, API_BASE_URL } from "../services/api";
+
+const rawGoogleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+const GOOGLE_MAPS_API_KEY = rawGoogleMapsApiKey === "INSERIRE_QUI_LA_CHIAVE_REALE" ? "" : rawGoogleMapsApiKey;
+const VICENZA_CENTER = { lat: 45.5455, lng: 11.5354 };
+let googleMapsPromise = null;
+
+function loadGoogleMaps(apiKey) {
+  if (window.google?.maps) return Promise.resolve(window.google.maps);
+  if (!googleMapsPromise) {
+    googleMapsPromise = new Promise((resolve, reject) => {
+      const existingScript = document.querySelector("script[data-team-google-maps]");
+      if (existingScript) {
+        existingScript.addEventListener("load", () => resolve(window.google?.maps), { once: true });
+        existingScript.addEventListener("error", () => reject(new Error("Google Maps non disponibile.")), { once: true });
+        return;
+      }
+      const script = document.createElement("script");
+      script.dataset.teamGoogleMaps = "true";
+      script.async = true;
+      script.defer = true;
+      script.src = apiKey
+        ? `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly`
+        : `${API_BASE_URL}/system-settings/google-maps.js`;
+      script.onload = () => resolve(window.google?.maps);
+      script.onerror = () => reject(new Error("Chiave Google Maps non valida o API non abilitata."));
+      document.head.appendChild(script);
+    });
+  }
+  return googleMapsPromise;
+}
 
 const clienteVuoto = {
   id: null,
@@ -107,6 +137,11 @@ function Clienti() {
   const [menuAltroClienteId, setMenuAltroClienteId] = useState(null);
   const [cartelleClienti, setCartelleClienti] = useState({});
   const [cartellaForm, setCartellaForm] = useState(null);
+  const [geocoding, setGeocoding] = useState(false);
+  const [mapsError, setMapsError] = useState("");
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const mapMarkersRef = useRef([]);
 
   useEffect(() => {
     let componenteAttivo = true;
@@ -178,10 +213,7 @@ function Clienti() {
     [cantieri.length, clienti, clientiFiltrati, preventivi.length],
   );
 
-  const clientiCondomini = useMemo(
-    () => clientiFiltrati.filter((cliente) => isCondominioCliente(cliente)),
-    [clientiFiltrati],
-  );
+  const clientiCondomini = useMemo(() => clientiFiltrati, [clientiFiltrati]);
 
   const condominiConCoordinate = useMemo(
     () =>
@@ -212,6 +244,91 @@ function Clienti() {
       maxLongitudine: Math.max(...longitudini),
     };
   }, [condominiConCoordinate]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function renderMap() {
+      if (!mapRef.current) return;
+      try {
+        const maps = await loadGoogleMaps(GOOGLE_MAPS_API_KEY);
+        if (!maps || !active || !mapRef.current) return;
+        setMapsError("");
+
+        if (!mapInstanceRef.current) {
+          mapInstanceRef.current = new maps.Map(mapRef.current, {
+            center: VICENZA_CENTER,
+            zoom: 9,
+            mapTypeControl: true,
+            streetViewControl: true,
+            fullscreenControl: true,
+          });
+        }
+
+        mapMarkersRef.current.forEach((marker) => marker.setMap(null));
+        mapMarkersRef.current = [];
+        const bounds = new maps.LatLngBounds();
+
+        condominiConCoordinate.forEach(({ cliente, coordinate }) => {
+          const position = { lat: coordinate.latitudine, lng: coordinate.longitudine };
+          const marker = new maps.Marker({
+            map: mapInstanceRef.current,
+            position,
+            title: `${valoreCliente(cliente, "idCliente", "clienteCode")} - ${cliente.ragioneSociale || "Condominio"}`,
+          });
+          marker.addListener("click", () => modificaCliente(cliente));
+          mapMarkersRef.current.push(marker);
+          bounds.extend(position);
+        });
+
+        if (condominiConCoordinate.length) mapInstanceRef.current.fitBounds(bounds);
+        else {
+          mapInstanceRef.current.setCenter(VICENZA_CENTER);
+          mapInstanceRef.current.setZoom(9);
+        }
+      } catch (error) {
+        if (active) setMapsError(error.message || "Errore caricamento Google Maps.");
+      }
+    }
+
+    renderMap();
+    return () => {
+      active = false;
+    };
+  }, [condominiConCoordinate]);
+
+  const geocodificaTutti = async () => {
+    if (geocoding) return;
+    setGeocoding(true);
+    setErrore("");
+    setMessaggio("Geocodifica in preparazione...");
+    let elaborati = 0;
+    let trovati = 0;
+    let errori = 0;
+
+    try {
+      while (true) {
+        const risposta = await api.post("/centro-operativo/geocode-missing", { limit: 25 });
+        elaborati += Number(risposta.elaborati || 0);
+        trovati += Number(risposta.trovati || 0);
+        errori += Number(risposta.errori || 0);
+        const rimanenti = Number(risposta.rimanenti || 0);
+        setMessaggio(
+          `Geocodifica: ${elaborati} elaborati, ${trovati} posizionati, ${errori} da verificare, ${rimanenti} rimanenti.`,
+        );
+        if (rimanenti === 0 || Number(risposta.elaborati || 0) === 0) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 350));
+      }
+
+      await aggiornaVistaDaDatabase();
+      setMessaggio(`Geocodifica completata: ${trovati} nuovi condomini posizionati, ${errori} indirizzi da verificare.`);
+    } catch (error) {
+      setErrore(`${error.message || "Geocodifica non riuscita"} Dopo ${elaborati} indirizzi elaborati.`);
+      await aggiornaVistaDaDatabase();
+    } finally {
+      setGeocoding(false);
+    }
+  };
 
   const contaPreventiviCliente = (cliente) =>
     preventivi.filter(
@@ -698,65 +815,26 @@ function Clienti() {
             </p>
           </div>
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-            {Array.from({ length: numeroGruppiGoogleMapsCondomini }, (_, index) => (
-              <button key={`maps-condomini-${index}`} type="button" onClick={() => apriCondominiGoogleMaps(index)}>
-                Google Maps {index * 10 + 1}-{Math.min((index + 1) * 10, numeroCondominiApribiliMaps)}
-              </button>
-            ))}
+            <button type="button" onClick={geocodificaTutti} disabled={geocoding}>
+              {geocoding ? "Geocodifica in corso..." : "Geocodifica tutti i condomini"}
+            </button>
           </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: "16px", alignItems: "stretch" }}>
-          <div
-            style={{
-              position: "relative",
-              minHeight: "380px",
-              overflow: "hidden",
-              border: "1px solid #dbe3ef",
-              borderRadius: "8px",
-              background:
-                "linear-gradient(90deg, rgba(148,163,184,0.14) 1px, transparent 1px), linear-gradient(rgba(148,163,184,0.14) 1px, transparent 1px), #f8fafc",
-              backgroundSize: "34px 34px",
-            }}
-          >
-            <div style={{ position: "absolute", inset: "18px", border: "1px dashed #cbd5e1", borderRadius: "8px" }} />
-            {condominiConCoordinate.length === 0 ? (
-              <div style={{ display: "grid", height: "100%", minHeight: "380px", placeItems: "center", color: "#64748b", textAlign: "center", padding: "24px" }}>
-                Nessun condominio con latitudine e longitudine. Inserisci le coordinate nelle anagrafiche per visualizzare i pin.
-              </div>
-            ) : (
-              condominiConCoordinate.map((item, index) => {
-                const posizione = posizionePinCondominio(item.coordinate);
-                const cliente = item.cliente;
-
-                return (
-                  <button
-                    key={`pin-condominio-${cliente.id}`}
-                    type="button"
-                    title={`${cliente.ragioneSociale || "Condominio"} - ${indirizzoMapsCliente(cliente)}`}
-                    onClick={() => modificaCliente(cliente)}
-                    style={{
-                      position: "absolute",
-                      left: posizione.left,
-                      top: posizione.top,
-                      transform: "translate(-50%, -50%)",
-                      width: "34px",
-                      height: "34px",
-                      minWidth: "34px",
-                      padding: 0,
-                      borderRadius: "50%",
-                      border: "2px solid white",
-                      background: "#1d4ed8",
-                      color: "white",
-                      boxShadow: "0 10px 22px rgba(29,78,216,0.28)",
-                      fontWeight: 800,
-                    }}
-                  >
-                    {index + 1}
-                  </button>
-                );
-              })
-            )}
+          <div>
+            {mapsError && <p style={{ color: "crimson", margin: "0 0 8px" }}>{mapsError}</p>}
+            <div
+              ref={mapRef}
+              aria-label="Google Maps condomini"
+              style={{
+                width: "100%",
+                minHeight: "480px",
+                border: "1px solid #dbe3ef",
+                borderRadius: "8px",
+                background: "#eef2f7",
+              }}
+            />
           </div>
 
           <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", overflow: "hidden", minHeight: "380px" }}>
