@@ -103,6 +103,7 @@ function CentroOperativo() {
   const [error, setError] = useState("");
   const [mapsError, setMapsError] = useState("");
   const [geocodeResult, setGeocodeResult] = useState("");
+  const [geocoding, setGeocoding] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [selectedSquadra, setSelectedSquadra] = useState("");
 
@@ -245,13 +246,33 @@ function CentroOperativo() {
   };
 
   const geocodificaMancanti = async () => {
-    setGeocodeResult("Geocodifica in corso...");
+    if (geocoding) return;
+    setGeocoding(true);
+    setGeocodeResult("Preparazione geocodifica...");
+    let elaborati = 0;
+    let trovati = 0;
+    let errori = 0;
+
     try {
-      const res = await api.post("/centro-operativo/geocode-missing", {});
-      setGeocodeResult(`Elaborati ${res.elaborati}, trovati ${res.trovati}, errori ${res.errori}`);
+      while (true) {
+        const res = await api.post("/centro-operativo/geocode-missing", { limit: 25 });
+        elaborati += Number(res.elaborati || 0);
+        trovati += Number(res.trovati || 0);
+        errori += Number(res.errori || 0);
+        const rimanenti = Number(res.rimanenti || 0);
+        setGeocodeResult(
+          `Elaborati ${elaborati} - trovati ${trovati} - da verificare ${errori} - rimanenti ${rimanenti}`,
+        );
+        if (rimanenti === 0 || Number(res.elaborati || 0) === 0) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 350));
+      }
       await caricaDati();
+      setGeocodeResult(`Completato: ${trovati} condomini posizionati, ${errori} indirizzi da verificare.`);
     } catch (err) {
-      setGeocodeResult(err.message || "Geocodifica non riuscita");
+      setGeocodeResult(`${err.message || "Geocodifica non riuscita"} Dopo ${elaborati} indirizzi elaborati.`);
+      await caricaDati();
+    } finally {
+      setGeocoding(false);
     }
   };
 
@@ -451,7 +472,7 @@ function CentroOperativo() {
           <section className="centro-card">
             <h2>GEOCODIFICA</h2>
             <p>Clienti senza coordinate: {stats?.senzaCoordinate ?? 0}</p>
-            <button className="wide" onClick={geocodificaMancanti}>Geocodifica mancanti</button>
+            <button className="wide" onClick={geocodificaMancanti} disabled={geocoding}>{geocoding ? "Geocodifica in corso..." : "Geocodifica tutti i mancanti"}</button>
             {geocodeResult && <small className="centro-note">{geocodeResult}</small>}
           </section>
         </aside>
