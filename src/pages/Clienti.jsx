@@ -301,29 +301,54 @@ function Clienti() {
     if (geocoding) return;
     setGeocoding(true);
     setErrore("");
-    setMessaggio("Geocodifica in preparazione...");
-    let elaborati = 0;
+
+    const daGeocodificare = clienti.filter(
+      (cliente) => !coordinateCliente(cliente) && indirizzoMapsCliente(cliente),
+    );
+    setMessaggio(`Geocodifica avviata per ${daGeocodificare.length} condomini...`);
+
     let trovati = 0;
     let errori = 0;
 
     try {
-      while (true) {
-        const risposta = await api.post("/centro-operativo/geocode-missing", { limit: 25 });
-        elaborati += Number(risposta.elaborati || 0);
-        trovati += Number(risposta.trovati || 0);
-        errori += Number(risposta.errori || 0);
-        const rimanenti = Number(risposta.rimanenti || 0);
+      const maps = await loadGoogleMaps(GOOGLE_MAPS_API_KEY);
+      const geocoder = new maps.Geocoder();
+
+      for (let index = 0; index < daGeocodificare.length; index += 1) {
+        const cliente = daGeocodificare[index];
+        try {
+          const response = await geocoder.geocode({
+            address: indirizzoMapsCliente(cliente),
+            region: "IT",
+          });
+          const location = response.results?.[0]?.geometry?.location;
+          if (!location) throw new Error("Indirizzo non riconosciuto");
+
+          await api.put(`/clienti/${cliente.id}`, {
+            ...cliente,
+            idCliente: valoreCliente(cliente, "idCliente", "clienteCode"),
+            clienteCode: valoreCliente(cliente, "idCliente", "clienteCode"),
+            ragioneSociale: cliente.ragioneSociale || "",
+            latitudine: location.lat(),
+            longitudine: location.lng(),
+          });
+          trovati += 1;
+        } catch {
+          errori += 1;
+        }
+
         setMessaggio(
-          `Geocodifica: ${elaborati} elaborati, ${trovati} posizionati, ${errori} da verificare, ${rimanenti} rimanenti.`,
+          `Geocodifica ${index + 1}/${daGeocodificare.length}: ${trovati} posizionati, ${errori} da verificare.`,
         );
-        if (rimanenti === 0 || Number(risposta.elaborati || 0) === 0) break;
-        await new Promise((resolve) => window.setTimeout(resolve, 350));
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
       }
 
       await aggiornaVistaDaDatabase();
-      setMessaggio(`Geocodifica completata: ${trovati} nuovi condomini posizionati, ${errori} indirizzi da verificare.`);
+      setMessaggio(
+        `Geocodifica completata: ${trovati} condomini posizionati, ${errori} indirizzi da verificare.`,
+      );
     } catch (error) {
-      setErrore(`${error.message || "Geocodifica non riuscita"} Dopo ${elaborati} indirizzi elaborati.`);
+      setErrore(error.message || "Geocodifica non riuscita.");
       await aggiornaVistaDaDatabase();
     } finally {
       setGeocoding(false);
