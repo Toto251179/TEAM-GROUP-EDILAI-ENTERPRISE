@@ -309,20 +309,31 @@ function Clienti() {
 
     let trovati = 0;
     let errori = 0;
+    let primoErrore = "";
 
     try {
       const maps = await loadGoogleMaps(GOOGLE_MAPS_API_KEY);
       const geocoder = new maps.Geocoder();
 
+      const geocodeConRetry = async (address, tentativo = 0) => {
+        try {
+          return await geocoder.geocode({ address, region: "IT" });
+        } catch (error) {
+          const dettaglio = String(error?.code || error?.message || error || "Errore sconosciuto");
+          if (/OVER_QUERY_LIMIT|RESOURCE_EXHAUSTED/i.test(dettaglio) && tentativo < 5) {
+            await new Promise((resolve) => window.setTimeout(resolve, 1500 * (tentativo + 1)));
+            return geocodeConRetry(address, tentativo + 1);
+          }
+          throw error;
+        }
+      };
+
       for (let index = 0; index < daGeocodificare.length; index += 1) {
         const cliente = daGeocodificare[index];
         try {
-          const response = await geocoder.geocode({
-            address: indirizzoMapsCliente(cliente),
-            region: "IT",
-          });
+          const response = await geocodeConRetry(indirizzoMapsCliente(cliente));
           const location = response.results?.[0]?.geometry?.location;
-          if (!location) throw new Error("Indirizzo non riconosciuto");
+          if (!location) throw new Error("ZERO_RESULTS: indirizzo non riconosciuto");
 
           await api.put(`/clienti/${cliente.id}`, {
             ...cliente,
@@ -333,22 +344,29 @@ function Clienti() {
             longitudine: location.lng(),
           });
           trovati += 1;
-        } catch {
+        } catch (error) {
           errori += 1;
+          const dettaglio = String(error?.code || error?.message || error || "Errore sconosciuto");
+          if (!primoErrore) primoErrore = dettaglio;
+
+          if (/REQUEST_DENIED|API.?KEY|BILLING|NOT.?AUTHORIZED|REFERER/i.test(dettaglio)) {
+            throw new Error(`Google ha rifiutato la geocodifica: ${dettaglio}`);
+          }
         }
 
         setMessaggio(
-          `Geocodifica ${index + 1}/${daGeocodificare.length}: ${trovati} posizionati, ${errori} da verificare.`,
+          `Geocodifica ${index + 1}/${daGeocodificare.length}: ${trovati} posizionati, ${errori} da verificare${primoErrore ? `. Primo errore: ${primoErrore}` : ""}.`,
         );
-        await new Promise((resolve) => window.setTimeout(resolve, 250));
+        await new Promise((resolve) => window.setTimeout(resolve, 300));
       }
 
       await aggiornaVistaDaDatabase();
       setMessaggio(
-        `Geocodifica completata: ${trovati} condomini posizionati, ${errori} indirizzi da verificare.`,
+        `Geocodifica completata: ${trovati} condomini posizionati, ${errori} indirizzi da verificare${primoErrore ? `. Primo errore: ${primoErrore}` : ""}.`,
       );
     } catch (error) {
       setErrore(error.message || "Geocodifica non riuscita.");
+      setMessaggio("");
       await aggiornaVistaDaDatabase();
     } finally {
       setGeocoding(false);
