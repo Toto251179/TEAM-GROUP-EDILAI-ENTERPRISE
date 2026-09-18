@@ -6,7 +6,6 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarDays,
-  Camera,
   Car,
   ClipboardCheck,
   ClipboardList,
@@ -14,7 +13,6 @@ import {
   FolderOpen,
   HardHat,
   LayoutDashboard,
-  Map,
   MapPinned,
   PackageCheck,
   Receipt,
@@ -22,7 +20,6 @@ import {
   Truck,
   Users,
   Wallet,
-  Wrench,
 } from "lucide-react";
 import { azienda } from "../config/azienda";
 
@@ -43,20 +40,15 @@ const menuSections = [
       { label: "Centro Operativo", icon: MapPinned, path: "/centro-operativo" },
       { label: "Calendario Interventi", icon: CalendarDays, path: "/centro-operativo/calendario-interventi" },
       { label: "Squadre e Tecnici", icon: Users, path: "/centro-operativo/squadre-tecnici" },
-      { label: "Percorsi e Navigazione", icon: Map, path: "/centro-operativo/percorsi-navigazione" },
     ],
   },
   {
     title: "Produzione",
     items: [
-      { label: "Cronoprogramma", icon: CalendarDays, path: "/cronoprogramma" },
       { label: "Chiamate Tecnici", icon: ClipboardCheck, path: "/chiamate-tecnici" },
       { label: "SAL", icon: BarChart3, path: "/sal" },
       { label: "Rapportini Lavori", icon: ClipboardList, path: "/rapportini" },
       { label: "Controllo Cantieri", icon: ClipboardCheck, path: "/controllo-cantieri" },
-      { label: "Foto Cantieri", icon: Camera, path: "/foto-cantiere" },
-      { label: "Giornale Cantiere", icon: ClipboardList, path: "/giornale-cantiere" },
-      { label: "Verbali Cantiere", icon: FileText, path: "/verbali-cantiere" },
     ],
   },
   {
@@ -68,9 +60,7 @@ const menuSections = [
       { label: "Subappaltatori", icon: BriefcaseBusiness, path: "/subappaltatori" },
       { label: "Operai", icon: HardHat, path: "/operai" },
       { label: "Squadre", icon: Users, path: "/squadre" },
-      { label: "Presenze Operai", icon: CalendarDays, path: "/presenze" },
       { label: "Mezzi Aziendali", icon: Car, path: "/mezzi" },
-      { label: "Attrezzature e DPI", icon: Wrench, path: "/attrezzature" },
     ],
   },
   {
