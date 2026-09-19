@@ -1,6 +1,13 @@
-import { FileText } from "lucide-react";
+import { BookOpen, Building2, FileText, Users } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { azienda } from "../config/azienda";
+
+const items = [
+  { label: "Clienti", icon: Users, path: "/clienti" },
+  { label: "Preventivi", icon: FileText, path: "/preventivi" },
+  { label: "Elenco Prezzi", icon: BookOpen, path: "/elenco-prezzi" },
+  { label: "Cantieri", icon: Building2, path: "/cantieri" },
+];
 
 function Sidebar() {
   return (
@@ -20,22 +27,28 @@ function Sidebar() {
       <nav className="enterprise-nav" aria-label="Navigazione principale">
         <div className="enterprise-nav-section">
           <p>Gestionale</p>
-          <NavLink
-            className={({ isActive }) =>
-              isActive ? "enterprise-nav-link active" : "enterprise-nav-link"
-            }
-            to="/preventivi"
-            title="Preventivi"
-          >
-            <FileText size={18} strokeWidth={2.1} />
-            <span>Preventivi</span>
-          </NavLink>
+          {items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                className={({ isActive }) =>
+                  isActive ? "enterprise-nav-link active" : "enterprise-nav-link"
+                }
+                key={item.path}
+                to={item.path}
+                title={item.label}
+              >
+                <Icon size={18} strokeWidth={2.1} />
+                <span>{item.label}</span>
+              </NavLink>
+            );
+          })}
         </div>
       </nav>
 
       <div className="enterprise-sidebar-footer">
-        <span>Modulo attivo</span>
-        <strong>Preventivi</strong>
+        <span>Moduli attivi</span>
+        <strong>Clienti · Preventivi · Prezzi · Cantieri</strong>
       </div>
     </aside>
   );

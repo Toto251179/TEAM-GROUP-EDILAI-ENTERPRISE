@@ -19,7 +19,7 @@ function Header() {
       <div className="enterprise-header-tools">
         <div className="enterprise-search">
           <Search size={17} />
-          <span>Cerca preventivo o cliente</span>
+          <span>Cerca cliente, preventivo, prezzo o cantiere</span>
         </div>
 
         <div className="enterprise-status">
