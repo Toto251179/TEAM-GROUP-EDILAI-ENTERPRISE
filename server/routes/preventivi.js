@@ -1004,6 +1004,114 @@ router.post("/:id/apri-pdf", asyncHandler(async (req, res) => {
   });
 }));
 
+router.post("/:id/email-draft", asyncHandler(async (req, res) => {
+  const preventivo = await getPreventivoCompleto(req.params.id);
+  if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
+
+  const cliente = await getClienteCompleto(preventivo.clienteId);
+  if (!cliente) {
+    return res.status(422).json({
+      code: "CLIENTE_NON_TROVATO",
+      message: "Cliente collegato al preventivo non trovato.",
+    });
+  }
+
+  const destinatario = String(
+    cliente.emailPrincipale ||
+    cliente.email ||
+    cliente.emailAmministratore ||
+    cliente.emailReferente ||
+    "",
+  ).trim();
+
+  if (!destinatario) {
+    return res.status(422).json({
+      code: "EMAIL_CLIENTE_MANCANTE",
+      message: "Nell'anagrafica cliente non e presente un indirizzo email.",
+    });
+  }
+
+  let archivio = await trovaPdfPreventivoArchiviato(preventivo, [cliente]);
+  if (!archivio.exists) {
+    archivio = await archiviaPdfPreventivo(preventivo, [cliente]);
+    await salvaArchivioPreventivo(req.params.id, archivio);
+  }
+
+  const stat = await fs.stat(archivio.filePath);
+  if (!stat.isFile() || stat.size <= 0) {
+    return res.status(404).json({
+      code: "PDF_NON_VALIDO",
+      message: "Il PDF del preventivo non e disponibile.",
+    });
+  }
+
+  const numero = String(preventivo.numero || "").trim();
+  const oggettoLavori = String(preventivo.descrizione || "").trim();
+  const clienteNome = String(cliente.ragioneSociale || preventivo.cliente || "").trim();
+  const oggetto = `Preventivo ${numero}${oggettoLavori ? ` - ${oggettoLavori}` : ""}`;
+  const corpo = [
+    "Buongiorno,",
+    "",
+    `con la presente trasmettiamo in allegato il preventivo relativo alle lavorazioni previste${clienteNome ? ` per ${clienteNome}` : ""}.`,
+    "",
+    numero ? `Riferimento: ${numero}` : "",
+    oggettoLavori ? `Oggetto: ${oggettoLavori}` : "",
+    "",
+    "Restiamo a disposizione per eventuali chiarimenti e attendiamo un Vostro cortese riscontro.",
+    "",
+    "Cordiali saluti.",
+  ].filter((riga, index, righe) => riga !== "" || righe[index - 1] !== "").join("\r\n");
+
+  const powershell = [
+    "$ErrorActionPreference = 'Stop'",
+    "$outlook = New-Object -ComObject Outlook.Application",
+    "$mail = $outlook.CreateItem(0)",
+    "$mail.To = $env:EDILAI_MAIL_TO",
+    "$mail.Subject = $env:EDILAI_MAIL_SUBJECT",
+    "$mail.Body = $env:EDILAI_MAIL_BODY",
+    "$null = $mail.Attachments.Add($env:EDILAI_MAIL_ATTACHMENT)",
+    "$mail.Display($false)",
+  ].join("; ");
+
+  try {
+    const processo = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-Command", powershell],
+      {
+        windowsHide: true,
+        env: {
+          ...process.env,
+          EDILAI_MAIL_TO: destinatario,
+          EDILAI_MAIL_SUBJECT: oggetto,
+          EDILAI_MAIL_BODY: corpo,
+          EDILAI_MAIL_ATTACHMENT: path.resolve(archivio.filePath),
+        },
+      },
+    );
+
+    let stderr = "";
+    processo.stderr?.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    const [code] = await once(processo, "close");
+    if (code !== 0) throw new Error(stderr.trim() || `PowerShell terminato con codice ${code}`);
+  } catch (error) {
+    return res.status(500).json({
+      code: "OUTLOOK_NON_DISPONIBILE",
+      message: "Impossibile aprire la bozza email in Outlook. Verifica che Outlook desktop sia installato e configurato.",
+      errore: error.message,
+    });
+  }
+
+  res.json({
+    success: true,
+    message: "Bozza email aperta in Outlook con il PDF allegato.",
+    destinatario,
+    oggetto,
+    filename: archivio.fileName,
+  });
+}));
+
 router.post("/:id/accetta", asyncHandler(async (req, res) => {
   const preventivoAggiornato = await repository.update(req.params.id, { stato: "Accettato" });
   if (!preventivoAggiornato) return res.status(404).json({ message: "Preventivo non trovato" });
