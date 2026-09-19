@@ -538,6 +538,7 @@ function Preventivi() {
   const [errore, setErrore] = useState("");
   const [messaggio, setMessaggio] = useState("");
   const [archivioInCorso, setArchivioInCorso] = useState("");
+  const [mailInCorso, setMailInCorso] = useState("");
   const [menuAzioni, setMenuAzioni] = useState({ anchorEl: null, preventivo: null });
   const [cartellePreventivi, setCartellePreventivi] = useState({});
   const [capitoliCompressi, setCapitoliCompressi] = useState({});
@@ -1571,6 +1572,21 @@ function Preventivi() {
     doc.save(`${formatNumeroPreventivo(preventivo.numero) || "preventivo"}.pdf`);
   };
 
+  const preparaMailPreventivo = async (preventivo) => {
+    setErrore("");
+    setMessaggio("");
+    setMailInCorso(String(preventivo.id));
+
+    try {
+      const risposta = await api.post(`/preventivi/${preventivo.id}/email-draft`, {});
+      setMessaggio(risposta?.message || "Bozza email aperta con PDF allegato.");
+    } catch (error) {
+      setErrore(error.message || "Impossibile preparare la mail del preventivo.");
+    } finally {
+      setMailInCorso("");
+    }
+  };
+
   const esportaElencoPreventivi = () => {
     esportaCsv(
       `elenco-preventivi-${new Date().toISOString().slice(0, 10)}.csv`,
@@ -1653,10 +1669,9 @@ function Preventivi() {
           importoGrid: imponibile,
           totaleGrid: totale,
           righeCount: righe.length,
-          folderPath: cartellePreventivi[preventivo.id]?.folderPath || "",
         };
       }),
-    [preventiviFiltrati, clienti, cartellePreventivi],
+    [preventiviFiltrati, clienti],
   );
 
   const colonnePreventiviGrid = useMemo(
@@ -1713,32 +1728,6 @@ function Preventivi() {
         minWidth: 120,
       },
       {
-        field: "folderPath",
-        headerName: "Cartella esterna",
-        minWidth: 680,
-        flex: 1.6,
-        sortable: false,
-        renderCell: (params) => {
-          const preventivo = params.row;
-          return (
-            <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", width: "100%", overflow: "hidden" }}>
-              <span title={params.value || "Percorso non disponibile"} style={{ minWidth: 180, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {params.value || "Cartella in preparazione"}
-              </span>
-              <MuiButton size="small" variant="outlined" sx={{ minWidth: 112, height: 32, px: 1 }} onClick={() => apriCartellaPreventivo(preventivo)}>
-                Apri Cartella
-              </MuiButton>
-              <MuiButton size="small" variant="outlined" sx={{ minWidth: 88, height: 32, px: 1 }} onClick={() => apriPdfPreventivo(preventivo)}>
-                Apri PDF
-              </MuiButton>
-              <MuiButton size="small" variant="outlined" sx={{ minWidth: 116, height: 32, px: 1 }} onClick={() => copiaPercorsoPreventivo(preventivo)}>
-                Copia Percorso
-              </MuiButton>
-            </Stack>
-          );
-        },
-      },
-      {
         field: "azioni",
         headerName: "Azioni",
         minWidth: 460,
@@ -1766,8 +1755,14 @@ function Preventivi() {
               <MuiButton size="small" variant="outlined" sx={actionButtonSx} onClick={() => generaPDF(preventivo)}>
                 {archivioInCorso === String(preventivo.id) ? "Archivio..." : "PDF"}
               </MuiButton>
-              <MuiButton size="small" variant="outlined" sx={actionButtonSx} disabled={preventivo.stato === "Annullato"} onClick={() => creaRevisionePreventivo(preventivo)}>
-                Duplica
+              <MuiButton
+                size="small"
+                variant="outlined"
+                sx={{ ...actionButtonSx, width: 118, minWidth: 118 }}
+                disabled={mailInCorso === String(preventivo.id)}
+                onClick={() => preparaMailPreventivo(preventivo)}
+              >
+                {mailInCorso === String(preventivo.id) ? "Preparo..." : "Invia Mail"}
               </MuiButton>
               <MuiButton size="small" variant="contained" sx={actionButtonSx} onClick={(event) => apriMenuAzioni(event, preventivo)}>
                 Altro
@@ -1777,7 +1772,7 @@ function Preventivi() {
         },
       },
     ],
-    [clienti, archivioInCorso, cartellePreventivi],
+    [clienti, archivioInCorso, mailInCorso],
   );
 
   const card = {
@@ -1894,29 +1889,6 @@ function Preventivi() {
             Via: {formatViaCivico(form.indirizzo)}<br />
             CAP: {form.indirizzo.cap || ""}<br />
             Comune: {form.indirizzo.comune || ""}
-          </div>
-        )}
-
-        {form.id && (
-          <div style={{ marginTop: "14px", padding: "12px", border: "1px solid #e2e8f0", borderRadius: "8px", background: "#f8fafc" }}>
-            <strong>Cartella esterna:</strong>
-            <p style={{ margin: "8px 0", wordBreak: "break-all", color: "#334155" }}>
-              {cartellePreventivi[form.id]?.folderPath || "Cartella in preparazione"}
-            </p>
-            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-              <button type="button" onClick={() => apriCartellaPreventivo({ id: form.id, numero: form.numero })}>
-                Apri Cartella
-              </button>
-              <button type="button" onClick={() => apriPdfPreventivo({ id: form.id, numero: form.numero })}>
-                Apri PDF
-              </button>
-              <button type="button" onClick={() => copiaPercorsoPreventivo({ id: form.id, numero: form.numero })}>
-                Copia Percorso
-              </button>
-              <button type="button" onClick={() => generaPDF({ ...form, righe: form.righe })}>
-                Rigenera PDF
-              </button>
-            </div>
           </div>
         )}
 
