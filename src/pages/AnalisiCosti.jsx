@@ -702,6 +702,55 @@ function AnalisiCosti() {
       ["Viaggi", numeroViaggi],
     ]);
     XLSX.utils.book_append_sheet(wb, summary, "Riepilogo");
+
+    const controlloRows = voci.map((voce, index) => ({
+      WBS: voce.controllo?.wbsCodice || "WBS-" + String(index + 1).padStart(3, "0"),
+      Descrizione: voce.descrizione,
+      BudgetAnalisi: numero(voce.importo),
+      BudgetOperativo: numero(voce.controllo?.budgetOperativo ?? voce.importo),
+      AvanzamentoPct: numero(voce.controllo?.avanzamentoPct),
+      QuantitaPrevista: numero(voce.quantita),
+      QuantitaEseguita: numero(voce.controllo?.quantitaEseguita),
+      OrePreviste: numero(voce.cronoprogramma?.oreTotali),
+      OreReali: numero(voce.controllo?.oreReali),
+      InizioPrevisto: voce.controllo?.dataInizioPrevista || "",
+      FinePrevista: voce.controllo?.dataFinePrevista || "",
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(controlloRows), "WBS Controllo");
+
+    if (dashboard?.cashflow?.length) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dashboard.cashflow), "Cash Flow");
+    }
+    if (dashboard?.fabbisogni?.length) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dashboard.fabbisogni), "Fabbisogni");
+    }
+    if (varianti.length) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(varianti), "Varianti");
+    }
+    if (impegni.length || dashboard?.ordini?.length) {
+      const impegniExport = [
+        ...(dashboard?.ordini || []).map((item) => ({
+          Fonte: "Ordine",
+          WBS: "",
+          Categoria: "Materiali",
+          Fornitore: item.fornitore,
+          Descrizione: item.materiale,
+          Importo: numero(item.importo),
+          Stato: item.stato,
+        })),
+        ...impegni.map((item) => ({
+          Fonte: item.fonte || "Manuale",
+          WBS: item.wbs_codice || item.wbsCodice || "",
+          Categoria: item.categoria,
+          Fornitore: item.fornitore,
+          Descrizione: item.descrizione,
+          Importo: numero(item.importo),
+          Stato: item.stato,
+        })),
+      ];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(impegniExport), "Impegni");
+    }
+
     XLSX.writeFile(wb, (titolo || "analisi-costi").replace(/[^a-z0-9_-]/gi, "_") + ".xlsx");
   }
 
@@ -712,9 +761,19 @@ function AnalisiCosti() {
     doc.setFontSize(9);
     doc.text("Sede: " + sede + " | Destinazione: " + (destinazione || "-"), 14, 22);
     doc.text("Costo diretto: " + euro.format(riepilogo.diretto) + " | Prezzo vendita: " + euro.format(riepilogo.vendita), 14, 28);
+    if (dashboard?.kpi) {
+      doc.text(
+        "Budget autorizzato: " + euro.format(dashboard.kpi.budgetAutorizzato || 0) +
+          " | Impegnato: " + euro.format(dashboard.kpi.impegnato || 0) +
+          " | EAC: " + euro.format(dashboard.kpi.eac || 0) +
+          " | Margine previsto: " + euro.format(dashboard.kpi.marginePrevisto || 0),
+        14,
+        33,
+      );
+    }
 
     autoTable(doc, {
-      startY: 34,
+      startY: dashboard?.kpi ? 39 : 34,
       head: [["N.", "Descrizione", "UM", "Q.tà", "Prezzo unit.", "Importo", "Tipo", "Fonte", "Stato"]],
       body: voci.map((voce) => [
         voce.ordine + 1,
