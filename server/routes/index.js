@@ -17,6 +17,7 @@ import condomini from "./condomini.js";
 import centroOperativo from "./centroOperativo.js";
 import systemSettings from "./systemSettings.js";
 import cartelle from "./cartelle.js";
+import ddtMateriali from "./ddtMateriali.js";
 
 const router = Router();
 
@@ -38,5 +39,6 @@ router.use("/condomini", condomini);
 router.use("/centro-operativo", centroOperativo);
 router.use("/system-settings", systemSettings);
 router.use("/cartelle", cartelle);
+router.use("/ddt-materiali", ddtMateriali);
 
 export default router;
