@@ -665,6 +665,7 @@ function OrdiniMateriali() {
                 <th>Preventivo</th>
                 <th>Codice materiale</th>
                 <th>Materiale</th>
+                <th>U.M.</th>
                 <th>Quantita</th>
                 <th>Prezzo unitario</th>
                 <th>Totale</th>
@@ -685,6 +686,7 @@ function OrdiniMateriali() {
                   <td>{riga.preventivoNumero || "-"}</td>
                   <td>{riga.codiceMateriale || "-"}</td>
                   <td>{riga.materiale || "-"}</td>
+                  <td>{riga.unitaMisura || "-"}</td>
                   <td>{Number(riga.quantita || 0).toLocaleString("it-IT")}</td>
                   <td>{riga.prezzoUnitario ? formatEuro(riga.prezzoUnitario) : <span style={{ color: "#b45309" }}>0,00 EUR<br /><small>prezzo da completare</small></span>}</td>
                   <td>{formatEuro(riga.totale)}</td>
@@ -707,7 +709,7 @@ function OrdiniMateriali() {
               ))}
               {!righeFiltrate.length && (
                 <tr>
-                  <td colSpan="14" style={{ color: "var(--enterprise-muted)", padding: "18px" }}>Nessun DDT o ordine materiale presente.</td>
+                  <td colSpan="15" style={{ color: "var(--enterprise-muted)", padding: "18px" }}>Nessun DDT o ordine materiale presente.</td>
                 </tr>
               )}
             </tbody>
