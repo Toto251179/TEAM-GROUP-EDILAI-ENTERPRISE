@@ -41,7 +41,7 @@ const ddtVuoto = {
   },
   stato: "BOZZA",
   allegato: null,
-  righe: [{ codiceMateriale: "", materiale: "", quantita: "1", prezzoUnitario: "", totale: "" }],
+  righe: [{ codiceMateriale: "", materiale: "", unitaMisura: "", quantita: "1", prezzoUnitario: "", totale: "" }],
 };
 
 function toNumber(value) {
@@ -97,11 +97,21 @@ function OrdiniMateriali() {
   const [errore, setErrore] = useState("");
   const [messaggio, setMessaggio] = useState("");
 
-  const caricaLocali = () => {
-    setDdt(ddtMaterialiService.lista());
-    setRegistroMateriali(ddtMaterialiService.registroMateriali());
+  const caricaLocali = async () => {
     setChiamate(chiamateTecniciService.lista());
     setSquadre(squadreService.lista());
+
+    try {
+      const [ddtDb, registroDb] = await Promise.all([
+        ddtMaterialiService.listaDb(),
+        ddtMaterialiService.registroMaterialiDb(),
+      ]);
+      setDdt(ddtDb);
+      setRegistroMateriali(registroDb);
+    } catch {
+      setDdt(ddtMaterialiService.lista());
+      setRegistroMateriali([]);
+    }
   };
 
   useEffect(() => {
@@ -182,14 +192,20 @@ function OrdiniMateriali() {
   };
 
   const autocompletaMaterialeOrdine = (codiceMateriale) => {
-    const materiale = ddtMaterialiService.cercaMateriale(codiceMateriale);
+    const needle = normalizza(codiceMateriale);
+    const materiale = registroMateriali.find(
+      (item) => normalizza(item.codiceMateriale) === needle,
+    );
+
     setNuovoOrdine((corrente) => ({
       ...corrente,
       codiceMateriale,
       materiale: materiale?.descrizione || corrente.materiale,
       prezzoUnitario: materiale?.ultimoPrezzo ?? corrente.prezzoUnitario,
       fornitore: materiale?.fornitoreAbituale || corrente.fornitore,
-      importo: materiale?.ultimoPrezzo && corrente.quantita ? toNumber(corrente.quantita) * toNumber(materiale.ultimoPrezzo) : corrente.importo,
+      importo: materiale?.ultimoPrezzo && corrente.quantita
+        ? toNumber(corrente.quantita) * toNumber(materiale.ultimoPrezzo)
+        : corrente.importo,
     }));
   };
 
@@ -280,15 +296,29 @@ function OrdiniMateriali() {
       ...corrente,
       righe: corrente.righe.map((riga, rigaIndex) => {
         if (rigaIndex !== index) return riga;
+
         const aggiornata = { ...riga, [campo]: valore };
-        const materiale = campo === "codiceMateriale" ? ddtMaterialiService.cercaMateriale(valore) : null;
+        const needle = campo === "codiceMateriale" ? normalizza(valore) : "";
+        const materiale = needle
+          ? registroMateriali.find((item) =>
+              normalizza(item.codiceMateriale) === needle &&
+              (!corrente.fornitore || normalizza(item.fornitoreAbituale) === normalizza(corrente.fornitore))
+            )
+          : null;
+
         const conRegistro = materiale
           ? {
               ...aggiornata,
+              articoloId: materiale.id,
+              articoloCensito: true,
               materiale: aggiornata.materiale || materiale.descrizione,
+              unitaMisura: aggiornata.unitaMisura || materiale.unitaMisura,
               prezzoUnitario: aggiornata.prezzoUnitario || materiale.ultimoPrezzo,
+              prezzoDaCompletare: !(aggiornata.prezzoUnitario || materiale.ultimoPrezzo),
+              prezzoFonte: aggiornata.prezzoUnitario ? "MANUALE" : "ANAGRAFICA",
             }
           : aggiornata;
+
         return ricalcolaRiga(conRegistro);
       }),
     }));
@@ -297,7 +327,7 @@ function OrdiniMateriali() {
   const aggiungiRigaDdt = () => {
     setAnteprimaDdt((corrente) => ({
       ...corrente,
-      righe: [...corrente.righe, { codiceMateriale: "", materiale: "", quantita: "1", prezzoUnitario: "", totale: "" }],
+      righe: [...corrente.righe, { codiceMateriale: "", materiale: "", unitaMisura: "", quantita: "1", prezzoUnitario: "", totale: "", articoloCensito: false }],
     }));
   };
 
@@ -305,14 +335,19 @@ function OrdiniMateriali() {
     setAnteprimaDdt((corrente) => ({ ...corrente, righe: corrente.righe.filter((_, rigaIndex) => rigaIndex !== index) }));
   };
 
-  const leggiDdtConAi = () => {
+  const leggiDdtConAi = async () => {
     if (!anteprimaDdt) return;
-    const letto = ddtMaterialiService.leggiConAi(anteprimaDdt);
-    setAnteprimaDdt(letto);
-    setMessaggio(letto.letturaAi?.messaggio || "Lettura DDT eseguita. Verificare l'anteprima prima della conferma.");
+    setErrore("");
+    try {
+      const letto = await ddtMaterialiService.leggiConAi(anteprimaDdt);
+      setAnteprimaDdt(letto);
+      setMessaggio(letto.letturaAi?.messaggio || "Lettura DDT eseguita. Verificare l'anteprima prima della conferma.");
+    } catch (error) {
+      setErrore(error.message || "Lettura AI del DDT non riuscita.");
+    }
   };
 
-  const confermaDdt = () => {
+  const confermaDdt = async () => {
     if (!anteprimaDdt?.allegato) {
       setErrore("Carica un allegato DDT prima di registrare.");
       return;
@@ -338,17 +373,27 @@ function OrdiniMateriali() {
       return;
     }
 
-    const registrato = ddtMaterialiService.conferma(anteprimaDdt);
-    consuntivazioniService.aggiungiMaterialiDaDdt(registrato);
-    setAnteprimaDdt(null);
-    caricaLocali();
-    setMessaggio(`DDT ${registrato.numeroDdt} registrato e collegato alla consuntivazione.`);
+    try {
+      const registrato = await ddtMaterialiService.conferma(anteprimaDdt);
+      consuntivazioniService.aggiungiMaterialiDaDdt(registrato);
+      setAnteprimaDdt(null);
+      await caricaLocali();
+      setMessaggio(
+        `DDT ${registrato.numeroDdt} registrato. Fornitore e articoli sono ora censiti per i prossimi DDT.`,
+      );
+    } catch (error) {
+      setErrore(error.message || "Registrazione DDT non riuscita.");
+    }
   };
 
-  const eliminaDdt = (id) => {
+  const eliminaDdt = async (id) => {
     if (!window.confirm("Eliminare il DDT registrato?")) return;
-    ddtMaterialiService.elimina(id);
-    caricaLocali();
+    try {
+      await ddtMaterialiService.elimina(id);
+      await caricaLocali();
+    } catch (error) {
+      setErrore(error.message || "Eliminazione DDT non riuscita.");
+    }
   };
 
   const apriDdt = (id) => {
@@ -477,7 +522,7 @@ function OrdiniMateriali() {
           <input
             id="ddt-upload"
             type="file"
-            accept="image/*,.pdf,application/pdf,.txt,.csv"
+            accept="image/*,.pdf,application/pdf,.txt,.csv,.xlsx,.xls"
             onChange={caricaDdt}
             style={{ display: "none" }}
           />
@@ -531,6 +576,7 @@ function OrdiniMateriali() {
               <tr>
                 <th>Codice materiale</th>
                 <th>Materiale</th>
+                <th>U.M.</th>
                 <th>Quantita</th>
                 <th>Prezzo unitario</th>
                 <th>Totale riga</th>
@@ -541,7 +587,20 @@ function OrdiniMateriali() {
               {anteprimaDdt.righe.map((riga, index) => (
                 <tr key={riga.id || index}>
                   <td><input value={riga.codiceMateriale || ""} onChange={(e) => aggiornaRigaDdt(index, "codiceMateriale", e.target.value)} /></td>
-                  <td><input value={riga.materiale || ""} onChange={(e) => aggiornaRigaDdt(index, "materiale", e.target.value)} /></td>
+                  <td>
+                    <input value={riga.materiale || ""} onChange={(e) => aggiornaRigaDdt(index, "materiale", e.target.value)} />
+                    {riga.articoloCensito && (
+                      <small style={{ display: "block", color: "#166534", fontWeight: 700, marginTop: "4px" }}>
+                        Articolo già censito
+                      </small>
+                    )}
+                    {!riga.articoloCensito && (riga.codiceMateriale || riga.materiale) && (
+                      <small style={{ display: "block", color: "#1d4ed8", fontWeight: 700, marginTop: "4px" }}>
+                        Nuovo articolo: verrà salvato
+                      </small>
+                    )}
+                  </td>
+                  <td><input value={riga.unitaMisura || ""} onChange={(e) => aggiornaRigaDdt(index, "unitaMisura", e.target.value)} style={{ width: "70px" }} /></td>
                   <td><input value={riga.quantita || ""} onChange={(e) => aggiornaRigaDdt(index, "quantita", e.target.value)} /></td>
                   <td><input value={riga.prezzoUnitario || ""} onChange={(e) => aggiornaRigaDdt(index, "prezzoUnitario", e.target.value)} /></td>
                   <td>
@@ -663,6 +722,7 @@ function OrdiniMateriali() {
             <tr>
               <th>Codice</th>
               <th>Descrizione</th>
+              <th>U.M.</th>
               <th>Fornitore abituale</th>
               <th>Ultimo prezzo</th>
               <th>Aggiornato</th>
@@ -673,6 +733,7 @@ function OrdiniMateriali() {
               <tr key={materiale.id}>
                 <td>{materiale.codiceMateriale || "-"}</td>
                 <td>{materiale.descrizione || "-"}</td>
+                <td>{materiale.unitaMisura || "-"}</td>
                 <td>{materiale.fornitoreAbituale || "-"}</td>
                 <td>{formatEuro(materiale.ultimoPrezzo)}</td>
                 <td>{materiale.aggiornatoIl ? new Date(materiale.aggiornatoIl).toLocaleString("it-IT") : "-"}</td>
@@ -680,7 +741,7 @@ function OrdiniMateriali() {
             ))}
             {!registroMateriali.length && (
               <tr>
-                <td colSpan="5" style={{ color: "var(--enterprise-muted)", padding: "18px" }}>Il registro si alimenta confermando i DDT.</td>
+                <td colSpan="6" style={{ color: "var(--enterprise-muted)", padding: "18px" }}>Il registro si alimenta confermando i DDT. Al prossimo caricamento il sistema riconosce gli articoli già censiti.</td>
               </tr>
             )}
           </tbody>
