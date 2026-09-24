@@ -809,10 +809,35 @@ async function getEnterpriseDashboard(item) {
     righe: produttivitaRighe,
   };
 
+  const alerts = [];
+  if (budgetAutorizzato > 0 && eac > budgetAutorizzato) {
+    alerts.push({ livello: "Alta", tipo: "Forecast", messaggio: "Il costo finale previsto supera il budget autorizzato di " + (eac - budgetAutorizzato).toFixed(2) + " EUR." });
+  }
+  if (ricavoContrattuale > 0 && ricavoContrattuale - eac < 0) {
+    alerts.push({ livello: "Alta", tipo: "Margine", messaggio: "Il forecast indica un margine finale negativo." });
+  }
+  if (cpi > 0 && cpi < 0.95) {
+    alerts.push({ livello: cpi < 0.85 ? "Alta" : "Media", tipo: "Costi", messaggio: "CPI inferiore a 0,95: efficienza economica sotto obiettivo." });
+  }
+  if (spi > 0 && spi < 0.95) {
+    alerts.push({ livello: spi < 0.85 ? "Alta" : "Media", tipo: "Tempi", messaggio: "SPI inferiore a 0,95: avanzamento in ritardo rispetto al piano." });
+  }
+  if (budgetAutorizzato > 0 && impegnato > budgetAutorizzato) {
+    alerts.push({ livello: "Alta", tipo: "Impegni", messaggio: "Gli impegni superano il budget autorizzato." });
+  }
+  const shortageCount = fabbisogni.filter((item) => toNumber(item.daOrdinare) > 0).length;
+  if (shortageCount > 0) {
+    alerts.push({ livello: "Media", tipo: "Materiali", messaggio: shortageCount + " materiali risultano da ordinare rispetto al fabbisogno." });
+  }
+  if (baselineBudget > 0 && budgetAutorizzato > baselineBudget) {
+    alerts.push({ livello: "Media", tipo: "Baseline", messaggio: "Il budget autorizzato è aumentato rispetto alla baseline di " + (budgetAutorizzato - baselineBudget).toFixed(2) + " EUR." });
+  }
+
   return {
     cantiere,
     kpi: {
       baselineBudget,
+      scostamentoBaseline: budgetAutorizzato - baselineBudget,
       budgetBase,
       variazioniApprovate,
       ricavoVariantiApprovate,
@@ -836,6 +861,7 @@ async function getEnterpriseDashboard(item) {
     cashflow,
     fabbisogni,
     produttivita,
+    alerts,
     ordini,
     impegni: manualCommitments.rows,
     varianti: variationsDb.rows,
