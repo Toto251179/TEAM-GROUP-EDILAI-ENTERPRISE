@@ -312,3 +312,15 @@ CREATE TABLE IF NOT EXISTS analisi_costi_voci (
 
 CREATE INDEX IF NOT EXISTS analisi_costi_voci_analisi_idx
   ON analisi_costi_voci (analisi_id);
+
+
+CREATE TABLE IF NOT EXISTS analisi_costi_revisioni (
+  id SERIAL PRIMARY KEY,
+  analisi_id INTEGER NOT NULL REFERENCES analisi_costi(id) ON DELETE CASCADE,
+  revisione INTEGER NOT NULL DEFAULT 0,
+  snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS analisi_costi_revisioni_analisi_idx
+  ON analisi_costi_revisioni (analisi_id, revisione DESC);
