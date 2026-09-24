@@ -75,7 +75,7 @@ const statements = [
   "CREATE UNIQUE INDEX IF NOT EXISTS clienti_cliente_code_uidx ON clienti (LOWER(BTRIM(cliente_code))) WHERE BTRIM(cliente_code) <> ''",
   `CREATE TABLE IF NOT EXISTS indirizzi (
     id SERIAL PRIMARY KEY,
-    cliente_id INTEGER NOT NULL REFERENCES clienti(id) ON DELETE CASCADE,
+    cliente_id TEXT NOT NULL REFERENCES clienti(id) ON DELETE CASCADE,
     via TEXT NOT NULL,
     civico TEXT,
     cap TEXT,
@@ -84,7 +84,7 @@ const statements = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  "ALTER TABLE indirizzi ADD COLUMN IF NOT EXISTS cliente_id INTEGER",
+  "ALTER TABLE indirizzi ADD COLUMN IF NOT EXISTS cliente_id TEXT",
   "ALTER TABLE indirizzi ADD COLUMN IF NOT EXISTS via TEXT",
   "ALTER TABLE indirizzi ADD COLUMN IF NOT EXISTS civico TEXT",
   "ALTER TABLE indirizzi ADD COLUMN IF NOT EXISTS cap TEXT",
@@ -100,7 +100,7 @@ const statements = [
      AND NOT EXISTS (SELECT 1 FROM indirizzi i WHERE i.cliente_id = c.id)`,
   `CREATE TABLE IF NOT EXISTS preventivi (
     id SERIAL PRIMARY KEY,
-    cliente_id INTEGER,
+    cliente_id TEXT,
     id_indirizzo INTEGER,
     cliente_nome TEXT,
     cliente_via TEXT,
@@ -120,7 +120,7 @@ const statements = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  "ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS cliente_id INTEGER",
+  "ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS cliente_id TEXT",
   "ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS id_indirizzo INTEGER",
   "ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS cliente_nome TEXT",
   "ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS cliente_via TEXT",
@@ -201,8 +201,8 @@ const statements = [
   "UPDATE preventivi SET data = COALESCE(data, data_preventivo) WHERE data_preventivo IS NOT NULL",
   `CREATE TABLE IF NOT EXISTS cantieri (
     id SERIAL PRIMARY KEY,
-    preventivo_id INTEGER,
-    cliente_id INTEGER,
+    preventivo_id TEXT,
+    cliente_id TEXT,
     cliente_code TEXT,
     nome TEXT NOT NULL,
     cliente TEXT,
@@ -215,8 +215,8 @@ const statements = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS preventivo_id INTEGER",
-  "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS cliente_id INTEGER",
+  "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS preventivo_id TEXT",
+  "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS cliente_id TEXT",
   "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS nome TEXT",
   "ALTER TABLE cantieri ADD COLUMN IF NOT EXISTS cliente TEXT",
@@ -244,7 +244,7 @@ const statements = [
      AND (ca.cliente_code IS NULL OR BTRIM(ca.cliente_code) = '')`,
   `CREATE TABLE IF NOT EXISTS rapportini (
     id SERIAL PRIMARY KEY,
-    cantiere_id INTEGER REFERENCES cantieri(id) ON DELETE SET NULL,
+    cantiere_id TEXT REFERENCES cantieri(id) ON DELETE SET NULL,
     cliente_code TEXT,
     data DATE NOT NULL DEFAULT CURRENT_DATE,
     cantiere TEXT,
@@ -268,7 +268,7 @@ const statements = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  "ALTER TABLE rapportini ADD COLUMN IF NOT EXISTS cantiere_id INTEGER",
+  "ALTER TABLE rapportini ADD COLUMN IF NOT EXISTS cantiere_id TEXT",
   "ALTER TABLE rapportini ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE rapportini ADD COLUMN IF NOT EXISTS data DATE NOT NULL DEFAULT CURRENT_DATE",
   "ALTER TABLE rapportini ADD COLUMN IF NOT EXISTS cantiere TEXT",
@@ -399,7 +399,7 @@ const statements = [
   "ALTER TABLE elenco_prezzi ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
   `CREATE TABLE IF NOT EXISTS preventivo_righe (
     id SERIAL PRIMARY KEY,
-    preventivo_id INTEGER NOT NULL REFERENCES preventivi(id) ON DELETE CASCADE,
+    preventivo_id TEXT NOT NULL REFERENCES preventivi(id) ON DELETE CASCADE,
     elenco_prezzi_id INTEGER REFERENCES elenco_prezzi(id) ON DELETE SET NULL,
     codice TEXT,
     categoria TEXT NOT NULL DEFAULT 'Edili',
@@ -419,7 +419,7 @@ const statements = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  "ALTER TABLE preventivo_righe ADD COLUMN IF NOT EXISTS preventivo_id INTEGER",
+  "ALTER TABLE preventivo_righe ADD COLUMN IF NOT EXISTS preventivo_id TEXT",
   "ALTER TABLE preventivo_righe ADD COLUMN IF NOT EXISTS elenco_prezzi_id INTEGER",
   "ALTER TABLE preventivo_righe ADD COLUMN IF NOT EXISTS codice TEXT",
   "ALTER TABLE preventivo_righe ADD COLUMN IF NOT EXISTS categoria TEXT NOT NULL DEFAULT 'Edili'",
@@ -440,7 +440,7 @@ const statements = [
   "ALTER TABLE preventivo_righe ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
   `CREATE TABLE IF NOT EXISTS movimenti_contabili (
     id SERIAL PRIMARY KEY,
-    cantiere_id INTEGER,
+    cantiere_id TEXT,
     cliente_code TEXT,
     data DATE NOT NULL DEFAULT CURRENT_DATE,
     tipo TEXT NOT NULL DEFAULT 'Entrata',
@@ -451,7 +451,7 @@ const statements = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  "ALTER TABLE movimenti_contabili ADD COLUMN IF NOT EXISTS cantiere_id INTEGER",
+  "ALTER TABLE movimenti_contabili ADD COLUMN IF NOT EXISTS cantiere_id TEXT",
   "ALTER TABLE movimenti_contabili ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE movimenti_contabili ADD COLUMN IF NOT EXISTS data DATE NOT NULL DEFAULT CURRENT_DATE",
   "ALTER TABLE movimenti_contabili ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'Entrata'",
@@ -470,7 +470,7 @@ const statements = [
      AND (m.cliente_code IS NULL OR BTRIM(m.cliente_code) = '')`,
   `CREATE TABLE IF NOT EXISTS fatture (
     id SERIAL PRIMARY KEY,
-    cantiere_id INTEGER REFERENCES cantieri(id) ON DELETE SET NULL,
+    cantiere_id TEXT REFERENCES cantieri(id) ON DELETE SET NULL,
     cliente_code TEXT,
     numero TEXT,
     tipo TEXT NOT NULL DEFAULT 'Attiva',
@@ -483,7 +483,7 @@ const statements = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  "ALTER TABLE fatture ADD COLUMN IF NOT EXISTS cantiere_id INTEGER",
+  "ALTER TABLE fatture ADD COLUMN IF NOT EXISTS cantiere_id TEXT",
   "ALTER TABLE fatture ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE fatture ADD COLUMN IF NOT EXISTS numero TEXT",
   "ALTER TABLE fatture ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'Attiva'",
@@ -507,7 +507,7 @@ const statements = [
   "UPDATE fatture SET soggetto = COALESCE(soggetto, 'Soggetto non indicato') WHERE soggetto IS NULL",
   `CREATE TABLE IF NOT EXISTS sal (
     id SERIAL PRIMARY KEY,
-    cantiere_id INTEGER REFERENCES cantieri(id) ON DELETE SET NULL,
+    cantiere_id TEXT REFERENCES cantieri(id) ON DELETE SET NULL,
     cliente_code TEXT,
     data DATE NOT NULL DEFAULT CURRENT_DATE,
     cantiere TEXT,
@@ -519,7 +519,7 @@ const statements = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  "ALTER TABLE sal ADD COLUMN IF NOT EXISTS cantiere_id INTEGER",
+  "ALTER TABLE sal ADD COLUMN IF NOT EXISTS cantiere_id TEXT",
   "ALTER TABLE sal ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE sal ADD COLUMN IF NOT EXISTS data DATE NOT NULL DEFAULT CURRENT_DATE",
   "ALTER TABLE sal ADD COLUMN IF NOT EXISTS cantiere TEXT",
@@ -560,7 +560,7 @@ const statements = [
   "ALTER TABLE referenti ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
   `CREATE TABLE IF NOT EXISTS clienti_referenti (
     id SERIAL PRIMARY KEY,
-    cliente_id INTEGER NOT NULL REFERENCES clienti(id) ON DELETE CASCADE,
+    cliente_id TEXT NOT NULL REFERENCES clienti(id) ON DELETE CASCADE,
     referente_id INTEGER NOT NULL REFERENCES referenti(id) ON DELETE CASCADE,
     attivo BOOLEAN NOT NULL DEFAULT TRUE,
     data_inizio TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -574,7 +574,7 @@ const statements = [
     id SERIAL PRIMARY KEY,
     numero_richiesta TEXT UNIQUE,
     data DATE NOT NULL DEFAULT CURRENT_DATE,
-    cliente_id INTEGER REFERENCES clienti(id) ON DELETE SET NULL,
+    cliente_id TEXT REFERENCES clienti(id) ON DELETE SET NULL,
     cliente_code TEXT,
     cliente TEXT NOT NULL,
     referente_id INTEGER REFERENCES referenti(id) ON DELETE SET NULL,
@@ -597,7 +597,7 @@ const statements = [
   )`,
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS numero_richiesta TEXT",
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS data DATE NOT NULL DEFAULT CURRENT_DATE",
-  "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS cliente_id INTEGER",
+  "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS cliente_id TEXT",
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS cliente TEXT",
   "ALTER TABLE inbox_lavori ADD COLUMN IF NOT EXISTS referente_id INTEGER",
@@ -686,7 +686,7 @@ const statements = [
   "ALTER TABLE movimenti_magazzino ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
   `CREATE TABLE IF NOT EXISTS ordini_materiali (
     id SERIAL PRIMARY KEY,
-    cantiere_id INTEGER REFERENCES cantieri(id) ON DELETE SET NULL,
+    cantiere_id TEXT REFERENCES cantieri(id) ON DELETE SET NULL,
     cliente_code TEXT,
     numero TEXT NOT NULL UNIQUE,
     data DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -699,7 +699,7 @@ const statements = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  "ALTER TABLE ordini_materiali ADD COLUMN IF NOT EXISTS cantiere_id INTEGER",
+  "ALTER TABLE ordini_materiali ADD COLUMN IF NOT EXISTS cantiere_id TEXT",
   "ALTER TABLE ordini_materiali ADD COLUMN IF NOT EXISTS cliente_code TEXT",
   "ALTER TABLE ordini_materiali ADD COLUMN IF NOT EXISTS numero TEXT",
   "ALTER TABLE ordini_materiali ADD COLUMN IF NOT EXISTS data DATE NOT NULL DEFAULT CURRENT_DATE",
@@ -828,6 +828,11 @@ const statements = [
   "CREATE UNIQUE INDEX IF NOT EXISTS ddt_articoli_fornitore_codice_uidx ON ddt_articoli (fornitore_id, LOWER(BTRIM(codice_articolo))) WHERE BTRIM(COALESCE(codice_articolo, '')) <> ''",
   "CREATE TABLE IF NOT EXISTS ddt_materiali (id SERIAL PRIMARY KEY, numero_ddt TEXT NOT NULL, data_ddt DATE NOT NULL DEFAULT CURRENT_DATE, fornitore_id INTEGER REFERENCES ddt_fornitori(id) ON DELETE SET NULL, fornitore_nome TEXT NOT NULL DEFAULT '', partita_iva TEXT, numero_chiamata TEXT, codice_progetto TEXT, id_cliente TEXT, cliente TEXT, preventivo_id TEXT, preventivo_numero TEXT, consuntivo_id TEXT, magazzino TEXT, allegato_nome TEXT, allegato_mime_type TEXT, allegato_data_url TEXT, stato TEXT NOT NULL DEFAULT 'REGISTRATO', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
   "CREATE TABLE IF NOT EXISTS ddt_materiali_righe (id SERIAL PRIMARY KEY, ddt_id INTEGER NOT NULL REFERENCES ddt_materiali(id) ON DELETE CASCADE, articolo_id INTEGER REFERENCES ddt_articoli(id) ON DELETE SET NULL, codice_articolo TEXT, descrizione TEXT NOT NULL DEFAULT '', unita_misura TEXT NOT NULL DEFAULT '', quantita NUMERIC(14,4) NOT NULL DEFAULT 0, prezzo_unitario NUMERIC(14,4) NOT NULL DEFAULT 0, totale NUMERIC(14,4) NOT NULL DEFAULT 0, prezzo_da_completare BOOLEAN NOT NULL DEFAULT FALSE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+  "CREATE TABLE IF NOT EXISTS analisi_costi (id SERIAL PRIMARY KEY, titolo TEXT NOT NULL DEFAULT '', file_name TEXT, file_mime TEXT, file_data_url TEXT, cliente_id TEXT, cliente_nome TEXT, preventivo_id TEXT, cantiere_id TEXT, sede TEXT NOT NULL DEFAULT 'Vicenza (VI)', destinazione TEXT, costo_manodopera_ora NUMERIC(12,2) NOT NULL DEFAULT 28, spese_generali_pct NUMERIC(6,2) NOT NULL DEFAULT 20, margine_pct NUMERIC(6,2) NOT NULL DEFAULT 10, km_andata_ritorno NUMERIC(12,2) NOT NULL DEFAULT 0, numero_viaggi NUMERIC(12,2) NOT NULL DEFAULT 0, costo_km NUMERIC(12,4) NOT NULL DEFAULT 0, pedaggi NUMERIC(12,2) NOT NULL DEFAULT 0, pasti_pernotti NUMERIC(12,2) NOT NULL DEFAULT 0, stato TEXT NOT NULL DEFAULT 'BOZZA', revisione INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+  "CREATE TABLE IF NOT EXISTS analisi_costi_voci (id SERIAL PRIMARY KEY, analisi_id INTEGER NOT NULL REFERENCES analisi_costi(id) ON DELETE CASCADE, ordine INTEGER NOT NULL DEFAULT 0, codice TEXT, descrizione TEXT NOT NULL DEFAULT '', unita TEXT, quantita NUMERIC(14,4) NOT NULL DEFAULT 0, prezzo_unitario NUMERIC(14,4) NOT NULL DEFAULT 0, importo NUMERIC(14,2) NOT NULL DEFAULT 0, tipo_costo TEXT NOT NULL DEFAULT 'Da classificare', fonte TEXT, fonte_titolo TEXT, fonte_url TEXT, fonte_data TEXT, stato TEXT NOT NULL DEFAULT 'Da verificare', componenti JSONB NOT NULL DEFAULT '{}'::jsonb, cronoprogramma JSONB NOT NULL DEFAULT '{}'::jsonb, criticita JSONB NOT NULL DEFAULT '[]'::jsonb, note TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+  "CREATE INDEX IF NOT EXISTS analisi_costi_voci_analisi_idx ON analisi_costi_voci (analisi_id)",
+  "CREATE TABLE IF NOT EXISTS analisi_costi_revisioni (id SERIAL PRIMARY KEY, analisi_id INTEGER NOT NULL REFERENCES analisi_costi(id) ON DELETE CASCADE, revisione INTEGER NOT NULL DEFAULT 0, snapshot JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+  "CREATE INDEX IF NOT EXISTS analisi_costi_revisioni_analisi_idx ON analisi_costi_revisioni (analisi_id, revisione DESC)",
   `GRANT USAGE ON SCHEMA public TO ${env.db.user}`,
   `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${env.db.user}`,
   `GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO ${env.db.user}`,
