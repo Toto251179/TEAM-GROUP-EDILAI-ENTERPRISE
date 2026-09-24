@@ -49,6 +49,10 @@ function numero(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function normalizeStatus(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function dataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1364,6 +1368,281 @@ function AnalisiCosti() {
                     <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{euro.format(item.oreTotali * numero(costoManodoperaOra))}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {tab === "controllo" && (
+          <div style={{ padding: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
+              <div>
+                <h2 style={{ margin: 0 }}>Controllo economico commessa</h2>
+                <p style={{ margin: "4px 0 0", color: "#64748b" }}>
+                  Budget operativo, impegni, costi reali, costo a finire e forecast finale.
+                </p>
+              </div>
+              <button type="button" onClick={() => analisiId && caricaControlloEnterprise(analisiId)} disabled={!analisiId}>
+                Aggiorna controllo
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(180px,1fr))", gap: "10px", marginBottom: "14px" }}>
+              {[
+                ["Budget base", controlloKpi.budgetBase, "#102a43"],
+                ["Varianti approvate", controlloKpi.variazioniApprovate, "#7c3aed"],
+                ["Budget autorizzato", controlloKpi.budgetAutorizzato, "#0b63ce"],
+                ["Impegnato", controlloKpi.impegnato, "#b45309"],
+                ["Costo reale", controlloKpi.costoReale, "#be123c"],
+                ["ETC - Costo a finire", controlloKpi.etc, "#475569"],
+                ["EAC - Costo finale previsto", controlloKpi.eac, numero(controlloKpi.vac) < 0 ? "#be123c" : "#166534"],
+                ["Margine finale previsto", controlloKpi.marginePrevisto, numero(controlloKpi.marginePrevisto) < 0 ? "#be123c" : "#166534"],
+              ].map(([label, value, color]) => (
+                <div key={label} style={cardStyle()}>
+                  <div style={{ color: "#64748b", fontSize: "12px", fontWeight: 700 }}>{label}</div>
+                  <div style={{ fontSize: "21px", fontWeight: 900, marginTop: "7px", color }}>{euro.format(value || 0)}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: "10px", marginBottom: "16px" }}>
+              <div style={cardStyle()}><strong>Avanzamento fisico</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(controlloKpi.avanzamentoPct).toFixed(1)}%</div></div>
+              <div style={cardStyle()}><strong>Avanzamento pianificato</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(controlloKpi.plannedPct).toFixed(1)}%</div></div>
+              <div style={cardStyle()}><strong>EV</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{euro.format(controlloKpi.earnedValue || 0)}</div></div>
+              <div style={cardStyle()}><strong>PV</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{euro.format(controlloKpi.plannedValue || 0)}</div></div>
+              <div style={{ ...cardStyle(), background: numero(controlloKpi.cpi) >= 1 ? "#f0fdf4" : "#fff7ed" }}><strong>CPI</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(controlloKpi.cpi).toFixed(2)}</div><small>Efficienza costi</small></div>
+              <div style={{ ...cardStyle(), background: numero(controlloKpi.spi) >= 1 ? "#f0fdf4" : "#fff7ed" }}><strong>SPI</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(controlloKpi.spi).toFixed(2)}</div><small>Efficienza tempi</small></div>
+            </div>
+
+            <h3>WBS / Budget operativo</h3>
+            <div style={{ overflowX: "auto", border: "1px solid #dbe3ee", borderRadius: "8px", marginBottom: "18px" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "1050px" }}>
+                <thead>
+                  <tr style={{ background: "#edf2f7" }}>
+                    <th style={{ padding: "8px" }}>WBS</th>
+                    <th style={{ padding: "8px" }}>Lavorazione</th>
+                    <th style={{ padding: "8px" }}>Budget analisi</th>
+                    <th style={{ padding: "8px" }}>Budget operativo</th>
+                    <th style={{ padding: "8px" }}>Avanzamento %</th>
+                    <th style={{ padding: "8px" }}>Q.tà prevista</th>
+                    <th style={{ padding: "8px" }}>Q.tà eseguita</th>
+                    <th style={{ padding: "8px" }}>Ore previste</th>
+                    <th style={{ padding: "8px" }}>Ore reali</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {voci.map((voce, index) => (
+                    <tr key={String(voce.id || index)} style={{ borderBottom: "1px solid #eef2f6" }}>
+                      <td style={{ padding: "7px" }}>
+                        <input
+                          value={voce.controllo?.wbsCodice || "WBS-" + String(index + 1).padStart(3, "0")}
+                          onChange={(e) => aggiornaControlloVoce(index, "wbsCodice", e.target.value)}
+                          style={{ width: "95px" }}
+                        />
+                      </td>
+                      <td style={{ padding: "7px", minWidth: "260px" }}>{voce.descrizione}</td>
+                      <td style={{ padding: "7px", textAlign: "right" }}>{euro.format(voce.importo || 0)}</td>
+                      <td style={{ padding: "7px" }}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={voce.controllo?.budgetOperativo ?? voce.importo ?? 0}
+                          onChange={(e) => aggiornaControlloVoce(index, "budgetOperativo", e.target.value)}
+                          style={{ width: "110px" }}
+                        />
+                      </td>
+                      <td style={{ padding: "7px" }}>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={voce.controllo?.avanzamentoPct ?? 0}
+                          onChange={(e) => aggiornaControlloVoce(index, "avanzamentoPct", e.target.value)}
+                          style={{ width: "80px" }}
+                        />
+                      </td>
+                      <td style={{ padding: "7px", textAlign: "right" }}>{numero(voce.quantita).toLocaleString("it-IT")}</td>
+                      <td style={{ padding: "7px" }}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={voce.controllo?.quantitaEseguita ?? 0}
+                          onChange={(e) => aggiornaControlloVoce(index, "quantitaEseguita", e.target.value)}
+                          style={{ width: "90px" }}
+                        />
+                      </td>
+                      <td style={{ padding: "7px", textAlign: "right" }}>{numero(voce.cronoprogramma?.oreTotali).toFixed(1)}</td>
+                      <td style={{ padding: "7px" }}>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={voce.controllo?.oreReali ?? 0}
+                          onChange={(e) => aggiornaControlloVoce(index, "oreReali", e.target.value)}
+                          style={{ width: "85px" }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1.2fr .8fr", gap: "16px" }}>
+              <div>
+                <h3>Impegni / Ordini / Subappalti</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "110px 130px 1fr 140px 130px auto", gap: "7px", marginBottom: "10px" }}>
+                  <input placeholder="WBS" value={nuovoImpegno.wbsCodice} onChange={(e) => setNuovoImpegno({ ...nuovoImpegno, wbsCodice: e.target.value })} />
+                  <select value={nuovoImpegno.categoria} onChange={(e) => setNuovoImpegno({ ...nuovoImpegno, categoria: e.target.value })}>
+                    <option>Subappalto</option>
+                    <option>Noleggio</option>
+                    <option>Materiali</option>
+                    <option>Servizi</option>
+                    <option>Altro</option>
+                  </select>
+                  <input placeholder="Descrizione impegno" value={nuovoImpegno.descrizione} onChange={(e) => setNuovoImpegno({ ...nuovoImpegno, descrizione: e.target.value })} />
+                  <input placeholder="Fornitore" value={nuovoImpegno.fornitore} onChange={(e) => setNuovoImpegno({ ...nuovoImpegno, fornitore: e.target.value })} />
+                  <input type="number" step="0.01" placeholder="Importo €" value={nuovoImpegno.importo} onChange={(e) => setNuovoImpegno({ ...nuovoImpegno, importo: e.target.value })} />
+                  <button type="button" onClick={aggiungiImpegno}>Aggiungi</button>
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead><tr style={{ background: "#edf2f7" }}><th>Fonte</th><th>WBS</th><th>Categoria</th><th>Fornitore</th><th>Descrizione</th><th>Importo</th><th>Stato</th><th></th></tr></thead>
+                  <tbody>
+                    {(dashboard?.ordini || []).map((item) => (
+                      <tr key={"ordine-" + item.id} style={{ borderBottom: "1px solid #eef2f6" }}>
+                        <td style={{ padding: "7px" }}>Ordine</td><td style={{ padding: "7px" }}>-</td><td style={{ padding: "7px" }}>Materiali</td><td style={{ padding: "7px" }}>{item.fornitore}</td><td style={{ padding: "7px" }}>{item.materiale}</td><td style={{ padding: "7px", textAlign: "right" }}>{euro.format(item.importo || 0)}</td><td style={{ padding: "7px" }}>{item.stato}</td><td></td>
+                      </tr>
+                    ))}
+                    {impegni.map((item) => (
+                      <tr key={"impegno-" + item.id} style={{ borderBottom: "1px solid #eef2f6" }}>
+                        <td style={{ padding: "7px" }}>{item.fonte || "Manuale"}</td>
+                        <td style={{ padding: "7px" }}>{item.wbs_codice || item.wbsCodice || "-"}</td>
+                        <td style={{ padding: "7px" }}>{item.categoria}</td>
+                        <td style={{ padding: "7px" }}>{item.fornitore || "-"}</td>
+                        <td style={{ padding: "7px" }}>{item.descrizione}</td>
+                        <td style={{ padding: "7px", textAlign: "right" }}>{euro.format(item.importo || 0)}</td>
+                        <td style={{ padding: "7px" }}>{item.stato}</td>
+                        <td style={{ padding: "7px" }}><button type="button" onClick={() => eliminaImpegno(item.id)} style={{ background: "#fff", color: "#b91c1c" }}>×</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div>
+                <h3>Produttività manodopera</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "10px" }}>
+                  <div style={cardStyle()}><strong>Ore reali rapportini</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(dashboard?.produttivita?.oreReali).toFixed(1)}</div></div>
+                  <div style={cardStyle()}><strong>Costo ore stimato</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{euro.format(dashboard?.produttivita?.costoManodoperaRealeStimato || 0)}</div></div>
+                  <div style={cardStyle()}><strong>Quantità pianificata</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(dashboard?.produttivita?.quantitaPianificata).toFixed(1)}</div></div>
+                  <div style={cardStyle()}><strong>Quantità eseguita</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(dashboard?.produttivita?.quantitaEseguita).toFixed(1)}</div></div>
+                  <div style={{ ...cardStyle(), gridColumn: "span 2" }}><strong>Ore per unità prodotta</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(dashboard?.produttivita?.orePerUnita).toFixed(2)}</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "cashflow" && (
+          <div style={{ padding: "16px" }}>
+            <h2>Cash flow di commessa</h2>
+            <p style={{ color: "#64748b" }}>Confronto mensile tra costo previsto, consuntivato e impegni assunti.</p>
+            <div style={{ overflowX: "auto", border: "1px solid #dbe3ee", borderRadius: "8px" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr style={{ background: "#edf2f7" }}><th>Mese</th><th>Previsto</th><th>Consuntivo</th><th>Impegnato</th><th>Scostamento</th><th>Indicatore</th></tr></thead>
+                <tbody>
+                  {(dashboard?.cashflow || []).map((row) => {
+                    const max = Math.max(numero(row.previsto), numero(row.consuntivo), numero(row.impegnato), 1);
+                    return (
+                      <tr key={row.mese} style={{ borderBottom: "1px solid #eef2f6" }}>
+                        <td style={{ padding: "8px", fontWeight: 700 }}>{row.mese}</td>
+                        <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(row.previsto || 0)}</td>
+                        <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(row.consuntivo || 0)}</td>
+                        <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(row.impegnato || 0)}</td>
+                        <td style={{ padding: "8px", textAlign: "right", color: numero(row.scostamento) > 0 ? "#be123c" : "#166534", fontWeight: 700 }}>{euro.format(row.scostamento || 0)}</td>
+                        <td style={{ padding: "8px", minWidth: "220px" }}>
+                          <div style={{ height: "7px", background: "#e2e8f0", borderRadius: "99px", overflow: "hidden", marginBottom: "3px" }}><div style={{ height: "100%", width: Math.min(100, numero(row.previsto) / max * 100) + "%", background: "#0b63ce" }} /></div>
+                          <div style={{ height: "7px", background: "#e2e8f0", borderRadius: "99px", overflow: "hidden", marginBottom: "3px" }}><div style={{ height: "100%", width: Math.min(100, numero(row.consuntivo) / max * 100) + "%", background: "#16a34a" }} /></div>
+                          <div style={{ height: "7px", background: "#e2e8f0", borderRadius: "99px", overflow: "hidden" }}><div style={{ height: "100%", width: Math.min(100, numero(row.impegnato) / max * 100) + "%", background: "#f59e0b" }} /></div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {!dashboard?.cashflow?.length && <tr><td colSpan="6" style={{ padding: "24px", textAlign: "center", color: "#64748b" }}>Salva l'analisi e collega un cantiere con date e movimenti contabili per generare il cash flow.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {tab === "fabbisogni" && (
+          <div style={{ padding: "16px" }}>
+            <h2>Fabbisogno materiali</h2>
+            <p style={{ color: "#64748b" }}>Materiali richiesti dall'analisi confrontati con le giacenze di magazzino.</p>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: "#edf2f7" }}><th>Codice</th><th>Materiale</th><th>U.M.</th><th>Richiesto</th><th>Disponibile</th><th>Da ordinare</th><th>Valore da ordinare</th><th>Stato</th></tr></thead>
+              <tbody>
+                {(dashboard?.fabbisogni || []).map((item, index) => (
+                  <tr key={(item.codice || item.descrizione) + index} style={{ borderBottom: "1px solid #eef2f6" }}>
+                    <td style={{ padding: "8px" }}>{item.codice || "-"}</td>
+                    <td style={{ padding: "8px" }}>{item.descrizione}</td>
+                    <td style={{ padding: "8px", textAlign: "center" }}>{item.unita || "-"}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{numero(item.richiesto).toLocaleString("it-IT")}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{numero(item.disponibile).toLocaleString("it-IT")}</td>
+                    <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{numero(item.daOrdinare).toLocaleString("it-IT")}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(item.valoreDaOrdinare || 0)}</td>
+                    <td style={{ padding: "8px" }}>
+                      <span style={{ padding: "4px 8px", borderRadius: "6px", background: numero(item.daOrdinare) > 0 ? "#fef3c7" : "#dcfce7", color: numero(item.daOrdinare) > 0 ? "#92400e" : "#166534", fontWeight: 700 }}>
+                        {numero(item.daOrdinare) > 0 ? "Da ordinare" : "Coperto"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {!dashboard?.fabbisogni?.length && <tr><td colSpan="8" style={{ padding: "24px", textAlign: "center", color: "#64748b" }}>Esegui l'analisi dettagliata per generare il fabbisogno materiali.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {tab === "varianti" && (
+          <div style={{ padding: "16px" }}>
+            <h2>Varianti / Change order</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 130px 130px 110px 130px auto", gap: "8px", marginBottom: "14px" }}>
+              <input placeholder="Codice" value={nuovaVariante.codice} onChange={(e) => setNuovaVariante({ ...nuovaVariante, codice: e.target.value })} />
+              <input placeholder="Descrizione variante" value={nuovaVariante.descrizione} onChange={(e) => setNuovaVariante({ ...nuovaVariante, descrizione: e.target.value })} />
+              <input type="number" step="0.01" placeholder="Valore €" value={nuovaVariante.importo} onChange={(e) => setNuovaVariante({ ...nuovaVariante, importo: e.target.value })} />
+              <input type="number" step="0.01" placeholder="Costo €" value={nuovaVariante.impattoCosti} onChange={(e) => setNuovaVariante({ ...nuovaVariante, impattoCosti: e.target.value })} />
+              <input type="number" step="1" placeholder="Giorni" value={nuovaVariante.impattoGiorni} onChange={(e) => setNuovaVariante({ ...nuovaVariante, impattoGiorni: e.target.value })} />
+              <select value={nuovaVariante.stato} onChange={(e) => setNuovaVariante({ ...nuovaVariante, stato: e.target.value })}>
+                <option>Proposta</option>
+                <option>Approvata</option>
+                <option>Rifiutata</option>
+              </select>
+              <button type="button" onClick={aggiungiVariante}>Aggiungi</button>
+            </div>
+
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: "#edf2f7" }}><th>Codice</th><th>Descrizione</th><th>Valore</th><th>Impatto costi</th><th>Giorni</th><th>Stato</th><th>Azioni</th></tr></thead>
+              <tbody>
+                {varianti.map((item) => (
+                  <tr key={item.id} style={{ borderBottom: "1px solid #eef2f6" }}>
+                    <td style={{ padding: "8px" }}>{item.codice || "-"}</td>
+                    <td style={{ padding: "8px" }}>{item.descrizione}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(item.importo || 0)}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(item.impatto_costi ?? item.impattoCosti ?? item.importo ?? 0)}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{numero(item.impatto_giorni ?? item.impattoGiorni).toFixed(0)}</td>
+                    <td style={{ padding: "8px" }}>
+                      <span style={{ padding: "4px 8px", borderRadius: "6px", background: normalizeStatus(item.stato) === "approvata" ? "#dcfce7" : normalizeStatus(item.stato) === "rifiutata" ? "#fee2e2" : "#fef3c7", color: "#334155", fontWeight: 700 }}>
+                        {item.stato}
+                      </span>
+                    </td>
+                    <td style={{ padding: "8px", whiteSpace: "nowrap" }}>
+                      {normalizeStatus(item.stato) !== "approvata" && <button type="button" onClick={() => aggiornaStatoVariante(item, "Approvata")} style={{ background: "#16a34a", padding: "6px 8px" }}>Approva</button>}{" "}
+                      <button type="button" onClick={() => eliminaVariante(item.id)} style={{ background: "#fff", color: "#b91c1c", padding: "6px 8px" }}>×</button>
+                    </td>
+                  </tr>
+                ))}
+                {!varianti.length && <tr><td colSpan="7" style={{ padding: "24px", textAlign: "center", color: "#64748b" }}>Nessuna variante registrata.</td></tr>}
               </tbody>
             </table>
           </div>
