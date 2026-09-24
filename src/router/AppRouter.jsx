@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import AIEdile from "../pages/AIEdile.jsx";
+import AnalisiCosti from "../pages/AnalisiCosti.jsx";
 import Attrezzature from "../pages/Attrezzature.jsx";
 import Cantieri from "../pages/Cantieri.jsx";
 import ChiamateTecnici from "../pages/ChiamateTecnici.jsx";
@@ -47,6 +48,7 @@ function AppRouter() {
       <Route path="/centro-operativo/percorsi-navigazione" element={<CentroOperativo />} />
       <Route path="/mappa-condomini" element={<Navigate to="/centro-operativo" replace />} />
       <Route path="/preventivi" element={<Preventivi />} />
+      <Route path="/analisi-costi" element={<AnalisiCosti />} />
       <Route path="/elenco-prezzi" element={<ElencoPrezzi />} />
       <Route path="/cantieri" element={<Cantieri />} />
       <Route path="/chiamate-tecnici" element={<ChiamateTecnici />} />

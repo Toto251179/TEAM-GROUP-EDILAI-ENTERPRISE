@@ -2,6 +2,7 @@ import { NavLink } from "react-router-dom";
 import {
   BarChart3,
   BookOpen,
+  Calculator,
   Boxes,
   BriefcaseBusiness,
   Building2,
@@ -33,6 +34,7 @@ const menuSections = [
       { label: "Pannello di controllo", icon: LayoutDashboard, path: "/" },
       { label: "Clienti", icon: Users, path: "/clienti" },
       { label: "Preventivi", icon: FileText, path: "/preventivi" },
+      { label: "Analisi Costi", icon: Calculator, path: "/analisi-costi" },
       { label: "Elenco Prezzi", icon: BookOpen, path: "/elenco-prezzi" },
       { label: "Cantieri", icon: Building2, path: "/cantieri" },
     ],
