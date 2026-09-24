@@ -1506,6 +1506,32 @@ function AnalisiCosti() {
               <div style={{ ...cardStyle(), background: numero(controlloKpi.spi) >= 1 ? "#f0fdf4" : "#fff7ed" }}><strong>SPI</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(controlloKpi.spi).toFixed(2)}</div><small>Efficienza tempi</small></div>
             </div>
 
+            {dashboard?.alerts?.length > 0 && (
+              <div style={{ marginBottom: "16px" }}>
+                <h3>Alert automatici</h3>
+                <div style={{ display: "grid", gap: "8px" }}>
+                  {dashboard.alerts.map((alert, index) => (
+                    <div
+                      key={alert.tipo + "-" + index}
+                      style={{
+                        display: "flex",
+                        gap: "10px",
+                        alignItems: "center",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid " + (alert.livello === "Alta" ? "#fecaca" : "#fde68a"),
+                        background: alert.livello === "Alta" ? "#fff1f2" : "#fffbeb",
+                      }}
+                    >
+                      <AlertTriangle size={18} color={alert.livello === "Alta" ? "#be123c" : "#b45309"} />
+                      <strong>{alert.tipo}</strong>
+                      <span>{alert.messaggio}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <h3>WBS / Budget operativo</h3>
             <div style={{ overflowX: "auto", border: "1px solid #dbe3ee", borderRadius: "8px", marginBottom: "18px" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "1050px" }}>
