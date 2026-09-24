@@ -565,7 +565,7 @@ function AnalisiCosti() {
       }
 
       const base = {
-        clienteId: Number(clienteId),
+        clienteId,
         cliente: cliente?.ragioneSociale || cliente?.ragione_sociale || "",
         descrizione: titolo || "Preventivo da Analisi Costi",
         data: new Date().toISOString().slice(0, 10),
