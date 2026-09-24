@@ -577,6 +577,25 @@ function plannedProgressFromDates(startValue, endValue) {
   return Math.max(0, Math.min(100, (now - start) / (end - start) * 100));
 }
 
+function weightedPlannedProgress(voci, fallbackStart, fallbackEnd) {
+  const rows = safeArray(voci);
+  const totalBudget = rows.reduce((tot, voce) => {
+    const budget = toNumber(voce.controllo?.budgetOperativo) || toNumber(voce.importo);
+    return tot + Math.max(0, budget);
+  }, 0);
+  if (!totalBudget) return plannedProgressFromDates(fallbackStart, fallbackEnd);
+
+  const plannedValuePct = rows.reduce((tot, voce) => {
+    const budget = toNumber(voce.controllo?.budgetOperativo) || toNumber(voce.importo);
+    const start = voce.controllo?.dataInizioPrevista || fallbackStart;
+    const end = voce.controllo?.dataFinePrevista || fallbackEnd;
+    const pct = plannedProgressFromDates(start, end);
+    return tot + budget * pct;
+  }, 0);
+
+  return Math.max(0, Math.min(100, plannedValuePct / totalBudget));
+}
+
 async function getEnterpriseDashboard(item) {
   let cantiere = null;
   let movimenti = [];
@@ -651,7 +670,7 @@ async function getEnterpriseDashboard(item) {
   const latestSal = salRows.length ? salRows[salRows.length - 1] : null;
   const salPct = toNumber(latestSal?.percentuale);
   const avanzamentoPct = weightedProgress(item.voci, salPct);
-  const plannedPct = plannedProgressFromDates(cantiere?.data_inizio, cantiere?.data_fine_prevista);
+  const plannedPct = weightedPlannedProgress(item.voci, cantiere?.data_inizio, cantiere?.data_fine_prevista);
 
   const earnedValue = budgetAutorizzato * avanzamentoPct / 100;
   const plannedValue = budgetAutorizzato * plannedPct / 100;
