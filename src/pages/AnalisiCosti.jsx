@@ -774,6 +774,131 @@ function AnalisiCosti() {
     }
   }
 
+  async function assicuraAnalisiSalvata() {
+    if (analisiId) return analisiId;
+    const saved = await salvaAnalisi();
+    return saved?.id || null;
+  }
+
+  async function aggiungiImpegno() {
+    const id = await assicuraAnalisiSalvata();
+    if (!id) return;
+    if (!String(nuovoImpegno.descrizione || "").trim() || !numero(nuovoImpegno.importo)) {
+      setErrore("Inserisci descrizione e importo dell'impegno.");
+      return;
+    }
+
+    try {
+      await api.post("/analisi-costi/" + id + "/impegni", {
+        ...nuovoImpegno,
+        importo: numero(nuovoImpegno.importo),
+        data: new Date().toISOString().slice(0, 10),
+      });
+      setNuovoImpegno({
+        wbsCodice: "",
+        categoria: "Subappalto",
+        fornitore: "",
+        descrizione: "",
+        importo: "",
+        stato: "Impegnato",
+      });
+      await caricaControlloEnterprise(id);
+      setMessaggio("Impegno aggiunto al controllo commessa.");
+    } catch (error) {
+      setErrore(error.message || "Impossibile aggiungere l'impegno.");
+    }
+  }
+
+  async function eliminaImpegno(idImpegno) {
+    if (!analisiId || !idImpegno) return;
+    try {
+      await api.delete("/analisi-costi/" + analisiId + "/impegni/" + idImpegno);
+      await caricaControlloEnterprise(analisiId);
+    } catch (error) {
+      setErrore(error.message || "Impossibile eliminare l'impegno.");
+    }
+  }
+
+  async function aggiungiVariante() {
+    const id = await assicuraAnalisiSalvata();
+    if (!id) return;
+    if (!String(nuovaVariante.descrizione || "").trim()) {
+      setErrore("Inserisci la descrizione della variante.");
+      return;
+    }
+
+    try {
+      await api.post("/analisi-costi/" + id + "/varianti", {
+        ...nuovaVariante,
+        importo: numero(nuovaVariante.importo),
+        impattoCosti: numero(nuovaVariante.impattoCosti || nuovaVariante.importo),
+        impattoGiorni: numero(nuovaVariante.impattoGiorni),
+        data: new Date().toISOString().slice(0, 10),
+      });
+      setNuovaVariante({
+        codice: "",
+        descrizione: "",
+        importo: "",
+        impattoCosti: "",
+        impattoGiorni: "",
+        stato: "Proposta",
+      });
+      await caricaControlloEnterprise(id);
+      setMessaggio("Variante aggiunta.");
+    } catch (error) {
+      setErrore(error.message || "Impossibile aggiungere la variante.");
+    }
+  }
+
+  async function aggiornaStatoVariante(variante, stato) {
+    if (!analisiId || !variante?.id) return;
+    try {
+      await api.put("/analisi-costi/" + analisiId + "/varianti/" + variante.id, {
+        codice: variante.codice,
+        descrizione: variante.descrizione,
+        importo: variante.importo,
+        impattoCosti: variante.impatto_costi ?? variante.impattoCosti ?? variante.importo,
+        impattoGiorni: variante.impatto_giorni ?? variante.impattoGiorni ?? 0,
+        stato,
+        data: variante.data,
+        note: variante.note,
+      });
+      await caricaControlloEnterprise(analisiId);
+    } catch (error) {
+      setErrore(error.message || "Impossibile aggiornare la variante.");
+    }
+  }
+
+  async function eliminaVariante(idVariante) {
+    if (!analisiId || !idVariante) return;
+    try {
+      await api.delete("/analisi-costi/" + analisiId + "/varianti/" + idVariante);
+      await caricaControlloEnterprise(analisiId);
+    } catch (error) {
+      setErrore(error.message || "Impossibile eliminare la variante.");
+    }
+  }
+
+  const controlloKpi = dashboard?.kpi || {
+    budgetBase: voci.reduce((tot, voce) => tot + (numero(voce.controllo?.budgetOperativo) || numero(voce.importo)), 0),
+    variazioniApprovate: 0,
+    budgetAutorizzato: voci.reduce((tot, voce) => tot + (numero(voce.controllo?.budgetOperativo) || numero(voce.importo)), 0),
+    impegnato: 0,
+    costoReale: 0,
+    etc: 0,
+    eac: 0,
+    vac: 0,
+    marginePrevisto: 0,
+    avanzamentoPct: 0,
+    plannedPct: 0,
+    earnedValue: 0,
+    plannedValue: 0,
+    cpi: 0,
+    spi: 0,
+    oreReali: 0,
+    costoManodoperaRealeStimato: 0,
+  };
+
   const tabs = [
     ["voci", "Voci di costo"],
     ["dettaglio", "Analisi dettagliata"],
