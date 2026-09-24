@@ -611,12 +611,12 @@ function AnalisiCosti() {
       if (analisiSalvataId) {
         await api.put("/analisi-costi/" + analisiSalvataId, {
           ...payloadAnalisi(),
-          stato: "CONFERMATA",
+          stato: "PRONTA PER PREVENTIVO",
         });
       } else {
         const saved = await api.post("/analisi-costi", {
           ...payloadAnalisi(),
-          stato: "CONFERMATA",
+          stato: "PRONTA PER PREVENTIVO",
         });
         analisiSalvataId = saved.id;
         setAnalisiId(saved.id);
