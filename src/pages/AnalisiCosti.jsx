@@ -1161,7 +1161,18 @@ function AnalisiCosti() {
           </label>
           <label>
             Cantiere
-            <select value={cantiereId} onChange={(e) => setCantiereId(e.target.value)} style={{ width: "100%" }}>
+            <select
+              value={cantiereId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setCantiereId(id);
+                const cantiere = cantieri.find((item) => String(item.id) === String(id));
+                if (cantiere?.indirizzo) setDestinazione(cantiere.indirizzo);
+                if (cantiere?.clienteId) setClienteId(cantiere.clienteId);
+                if (cantiere?.preventivoId) setPreventivoId(cantiere.preventivoId);
+              }}
+              style={{ width: "100%" }}
+            >
               <option value="">Seleziona cantiere</option>
               {cantieri.map((item) => (
                 <option key={item.id} value={item.id}>{item.nome || item.cantiere || item.id}</option>
