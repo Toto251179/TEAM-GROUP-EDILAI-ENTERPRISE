@@ -18,6 +18,7 @@ import centroOperativo from "./centroOperativo.js";
 import systemSettings from "./systemSettings.js";
 import cartelle from "./cartelle.js";
 import ddtMateriali from "./ddtMateriali.js";
+import analisiCosti from "./analisiCosti.js";
 
 const router = Router();
 
@@ -40,5 +41,6 @@ router.use("/centro-operativo", centroOperativo);
 router.use("/system-settings", systemSettings);
 router.use("/cartelle", cartelle);
 router.use("/ddt-materiali", ddtMateriali);
+router.use("/analisi-costi", analisiCosti);
 
 export default router;
