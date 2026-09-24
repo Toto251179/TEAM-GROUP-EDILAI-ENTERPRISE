@@ -671,9 +671,30 @@ async function getEnterpriseDashboard(item) {
   const ricavoContrattualeBase = toNumber(ricavo.rows[0]?.imponibile || ricavo.rows[0]?.totale);
   const ricavoContrattuale = ricavoContrattualeBase + ricavoVariantiApprovate;
 
-  const months = monthsBetween(cantiere?.data_inizio, cantiere?.data_fine_prevista);
-  const plannedPerMonth = months.length ? budgetAutorizzato / months.length : budgetAutorizzato;
+  const datedRows = item.voci.filter(
+    (voce) => voce.controllo?.dataInizioPrevista && voce.controllo?.dataFinePrevista,
+  );
+  const dateCandidates = datedRows.flatMap((voce) => [
+    voce.controllo.dataInizioPrevista,
+    voce.controllo.dataFinePrevista,
+  ]);
+  const globalStart = cantiere?.data_inizio || dateCandidates.sort()[0] || new Date().toISOString().slice(0, 10);
+  const globalEnd = cantiere?.data_fine_prevista || dateCandidates.sort().slice(-1)[0] || globalStart;
+  const months = monthsBetween(globalStart, globalEnd);
+  const undatedBudget = item.voci
+    .filter((voce) => !(voce.controllo?.dataInizioPrevista && voce.controllo?.dataFinePrevista))
+    .reduce((tot, voce) => tot + (toNumber(voce.controllo?.budgetOperativo) || toNumber(voce.importo)), 0);
+  const undatedPerMonth = months.length ? undatedBudget / months.length : undatedBudget;
+
   const cashflow = months.map((month) => {
+    const plannedDated = datedRows.reduce((tot, voce) => {
+      const voceMonths = monthsBetween(voce.controllo.dataInizioPrevista, voce.controllo.dataFinePrevista);
+      if (!voceMonths.includes(month)) return tot;
+      const budget = toNumber(voce.controllo?.budgetOperativo) || toNumber(voce.importo);
+      return tot + (voceMonths.length ? budget / voceMonths.length : budget);
+    }, 0);
+    const planned = plannedDated + undatedPerMonth;
+
     const actual = movimenti
       .filter((row) => normalize(row.tipo) === "uscita" && monthKey(row.data) === month)
       .reduce((tot, row) => tot + toNumber(row.importo), 0);
@@ -685,10 +706,10 @@ async function getEnterpriseDashboard(item) {
         .reduce((tot, row) => tot + toNumber(row.importo), 0);
     return {
       mese: month,
-      previsto: plannedPerMonth,
+      previsto: planned,
       consuntivo: actual,
       impegnato: committed,
-      scostamento: actual - plannedPerMonth,
+      scostamento: actual - planned,
     };
   });
 
