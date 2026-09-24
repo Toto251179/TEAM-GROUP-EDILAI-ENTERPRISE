@@ -502,6 +502,77 @@ async function hydrate(id) {
   };
 }
 
+async function saveRevision(analisiId) {
+  const current = await hydrate(analisiId);
+  if (!current) return;
+  await query(
+    "INSERT INTO analisi_costi_revisioni (analisi_id, revisione, snapshot) VALUES ($1,$2,$3::jsonb)",
+    [analisiId, current.revisione || 0, JSON.stringify(current)],
+  );
+}
+
+router.get("/:id/revisioni", async (req, res, next) => {
+  try {
+    await ensureSchema();
+    const result = await query(
+      "SELECT id, analisi_id, revisione, snapshot, created_at FROM analisi_costi_revisioni WHERE analisi_id = $1 ORDER BY revisione DESC, id DESC",
+      [req.params.id],
+    );
+    res.json(result.rows.map((row) => ({
+      id: row.id,
+      analisiId: row.analisi_id,
+      revisione: row.revisione,
+      snapshot: row.snapshot,
+      createdAt: row.created_at,
+    })));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id/confronto", async (req, res, next) => {
+  try {
+    await ensureSchema();
+    const item = await hydrate(req.params.id);
+    if (!item) return res.status(404).json({ message: "Analisi costi non trovata." });
+
+    let preventivo = null;
+    if (item.preventivoId) {
+      const result = await query(
+        "SELECT id, numero, imponibile, totale, stato FROM preventivi WHERE id::text = $1::text LIMIT 1",
+        [String(item.preventivoId)],
+      );
+      preventivo = result.rows[0] || null;
+    }
+
+    let costoReale = 0;
+    let movimenti = [];
+    if (item.cantiereId) {
+      const result = await query(
+        "SELECT id, data, categoria, descrizione, importo FROM movimenti_contabili WHERE cantiere_id::text = $1::text AND LOWER(tipo) = 'uscita' ORDER BY data DESC, id DESC",
+        [String(item.cantiereId)],
+      );
+      movimenti = result.rows;
+      costoReale = result.rows.reduce((tot, row) => tot + Number(row.importo || 0), 0);
+    }
+
+    const costoPreventivato = item.voci.reduce((tot, voce) => tot + Number(voce.importo || 0), 0);
+    const ricavoPreventivo = Number(preventivo?.imponibile || preventivo?.totale || 0);
+
+    res.json({
+      costoPreventivato,
+      costoReale,
+      scostamentoCosto: costoReale - costoPreventivato,
+      ricavoPreventivo,
+      margineReale: ricavoPreventivo - costoReale,
+      preventivo,
+      movimenti,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/", async (_req, res, next) => {
   try {
     await ensureSchema();
@@ -563,6 +634,7 @@ router.post("/", async (req, res, next) => {
       ],
     );
     await saveRows(result.rows[0].id, safeArray(body.voci));
+    await saveRevision(result.rows[0].id);
     res.status(201).json(await hydrate(result.rows[0].id));
   } catch (error) {
     next(error);
@@ -600,6 +672,7 @@ router.put("/:id", async (req, res, next) => {
     );
     if (!updated.rows[0]) return res.status(404).json({ message: "Analisi costi non trovata." });
     await saveRows(req.params.id, safeArray(body.voci));
+    await saveRevision(req.params.id);
     res.json(await hydrate(req.params.id));
   } catch (error) {
     next(error);
