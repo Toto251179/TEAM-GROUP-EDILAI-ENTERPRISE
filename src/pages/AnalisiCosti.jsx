@@ -133,8 +133,12 @@ function AnalisiCosti() {
   const [titolo, setTitolo] = useState("Analisi Costi");
   const [voci, setVoci] = useState([]);
   const [clienti, setClienti] = useState([]);
+  const [cantieri, setCantieri] = useState([]);
   const [clienteId, setClienteId] = useState("");
+  const [cantiereId, setCantiereId] = useState("");
   const [preventivoId, setPreventivoId] = useState(null);
+  const [revisioni, setRevisioni] = useState([]);
+  const [confronto, setConfronto] = useState(null);
   const [storico, setStorico] = useState([]);
   const [storicoId, setStoricoId] = useState("");
   const [tab, setTab] = useState("voci");
@@ -162,11 +166,13 @@ function AnalisiCosti() {
   useEffect(() => {
     async function bootstrap() {
       try {
-        const [clientiDb, storicoDb] = await Promise.all([
+        const [clientiDb, cantieriDb, storicoDb] = await Promise.all([
           api.get("/clienti"),
+          api.get("/cantieri"),
           api.get("/analisi-costi"),
         ]);
         setClienti(Array.isArray(clientiDb) ? clientiDb : []);
+        setCantieri(Array.isArray(cantieriDb) ? cantieriDb : []);
         setStorico(Array.isArray(storicoDb) ? storicoDb : []);
       } catch {
         // La pagina resta utilizzabile anche se storico/clienti non sono disponibili.
@@ -421,6 +427,7 @@ function AnalisiCosti() {
       fileDataUrl,
       clienteId: clienteId || null,
       clienteNome: cliente?.ragioneSociale || cliente?.ragione_sociale || "",
+      cantiereId: cantiereId || null,
       preventivoId,
       sede,
       destinazione,
@@ -452,8 +459,14 @@ function AnalisiCosti() {
 
       setAnalisiId(saved.id);
       setMessaggio("Analisi costi salvata nel database.");
-      const storicoDb = await api.get("/analisi-costi");
+      const [storicoDb, revDb, confDb] = await Promise.all([
+        api.get("/analisi-costi"),
+        api.get("/analisi-costi/" + saved.id + "/revisioni"),
+        api.get("/analisi-costi/" + saved.id + "/confronto"),
+      ]);
       setStorico(Array.isArray(storicoDb) ? storicoDb : []);
+      setRevisioni(Array.isArray(revDb) ? revDb : []);
+      setConfronto(confDb || null);
       return saved;
     } catch (error) {
       setErrore(error.message || "Salvataggio non riuscito.");
@@ -475,6 +488,7 @@ function AnalisiCosti() {
       setFileMime(saved.fileMime || "");
       setFileDataUrl(saved.fileDataUrl || "");
       setClienteId(saved.clienteId || "");
+      setCantiereId(saved.cantiereId || "");
       setPreventivoId(saved.preventivoId || null);
       setSede(saved.sede || "Vicenza (VI)");
       setDestinazione(saved.destinazione || "");
@@ -487,6 +501,12 @@ function AnalisiCosti() {
       setPedaggi(saved.pedaggi || 0);
       setPastiPernotti(saved.pastiPernotti || 0);
       setVoci(saved.voci || []);
+      const [revDb, confDb] = await Promise.all([
+        api.get("/analisi-costi/" + saved.id + "/revisioni"),
+        api.get("/analisi-costi/" + saved.id + "/confronto"),
+      ]);
+      setRevisioni(Array.isArray(revDb) ? revDb : []);
+      setConfronto(confDb || null);
       setMessaggio("Analisi salvata caricata.");
     } catch (error) {
       setErrore(error.message || "Impossibile aprire l'analisi.");
@@ -858,6 +878,15 @@ function AnalisiCosti() {
             </select>
           </label>
           <label>
+            Cantiere
+            <select value={cantiereId} onChange={(e) => setCantiereId(e.target.value)} style={{ width: "100%" }}>
+              <option value="">Seleziona cantiere</option>
+              {cantieri.map((item) => (
+                <option key={item.id} value={item.id}>{item.nome || item.cantiere || item.id}</option>
+              ))}
+            </select>
+          </label>
+          <label>
             Sede
             <input value={sede} onChange={(e) => setSede(e.target.value)} />
           </label>
@@ -1173,6 +1202,32 @@ function AnalisiCosti() {
               {numeroViaggi === 0 && destinazione && <li>Definisci il numero di viaggi previsti per includere correttamente le percorrenze.</li>}
               <li>Verifica il margine del {marginePct}% prima di trasferire le voci al preventivo.</li>
             </ul>
+
+            {confronto && (
+              <div style={{ marginTop: "16px" }}>
+                <h3>Confronto preventivo / consuntivo</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }}>
+                  <div style={cardStyle()}><strong>Costo preventivato</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{euro.format(confronto.costoPreventivato || 0)}</div></div>
+                  <div style={cardStyle()}><strong>Costo reale</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{euro.format(confronto.costoReale || 0)}</div></div>
+                  <div style={cardStyle()}><strong>Scostamento costo</strong><div style={{ fontSize: "20px", fontWeight: 800, color: numero(confronto.scostamentoCosto) > 0 ? "#b91c1c" : "#166534" }}>{euro.format(confronto.scostamentoCosto || 0)}</div></div>
+                  <div style={cardStyle()}><strong>Margine reale</strong><div style={{ fontSize: "20px", fontWeight: 800, color: numero(confronto.margineReale) < 0 ? "#b91c1c" : "#166534" }}>{euro.format(confronto.margineReale || 0)}</div></div>
+                </div>
+              </div>
+            )}
+
+            {revisioni.length > 0 && (
+              <div style={{ marginTop: "16px" }}>
+                <h3>Storico revisioni</h3>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {revisioni.map((rev) => (
+                    <span key={rev.id} style={{ border: "1px solid #dbe3ee", borderRadius: "999px", padding: "6px 10px", background: "#fff" }}>
+                      Rev.{rev.revisione} · {new Date(rev.createdAt).toLocaleString("it-IT")}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div style={{ ...cardStyle(), maxWidth: "520px", marginTop: "14px" }}>
               <strong>Riepilogo economico</strong>
               <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "7px", marginTop: "10px" }}>
