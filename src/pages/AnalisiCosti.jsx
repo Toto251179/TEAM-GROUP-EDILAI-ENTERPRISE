@@ -26,6 +26,7 @@ const TIPI_COSTO = [
   "Noleggi",
   "Attrezzature",
   "Mezzi/Trasferte",
+  "Sicurezza",
   "Altri costi",
   "Da classificare",
 ];
@@ -150,6 +151,7 @@ function AnalisiCosti() {
   const [revisioni, setRevisioni] = useState([]);
   const [confronto, setConfronto] = useState(null);
   const [dashboard, setDashboard] = useState(null);
+  const [portfolio, setPortfolio] = useState([]);
   const [impegni, setImpegni] = useState([]);
   const [varianti, setVarianti] = useState([]);
   const [nuovoImpegno, setNuovoImpegno] = useState({
@@ -232,7 +234,7 @@ function AnalisiCosti() {
     const materiali = somma(["Materiali"]);
     const noleggi = somma(["Noleggi", "Attrezzature"]);
     const manodopera = somma(["Manodopera"]);
-    const altri = somma(["Mezzi/Trasferte", "Altri costi"]) + costoTrasferteExtra;
+    const altri = somma(["Mezzi/Trasferte", "Sicurezza", "Altri costi"]) + costoTrasferteExtra;
     const diretto = materiali + noleggi + manodopera + altri;
     const speseGenerali = diretto * (numero(speseGeneraliPct) / 100);
     const baseMargine = diretto + speseGenerali;
@@ -778,6 +780,27 @@ function AnalisiCosti() {
     }
   }
 
+  async function caricaPortfolio() {
+    try {
+      const data = await api.get("/analisi-costi/portfolio/commesse");
+      setPortfolio(Array.isArray(data) ? data : []);
+    } catch (error) {
+      setErrore(error.message || "Impossibile caricare il portfolio commesse.");
+    }
+  }
+
+  async function impostaBaseline() {
+    const id = await assicuraAnalisiSalvata();
+    if (!id) return;
+    try {
+      await api.post("/analisi-costi/" + id + "/baseline", {});
+      await caricaControlloEnterprise(id);
+      setMessaggio("Baseline economica impostata sulla revisione corrente.");
+    } catch (error) {
+      setErrore(error.message || "Impossibile impostare la baseline.");
+    }
+  }
+
   async function assicuraAnalisiSalvata() {
     if (analisiId) return analisiId;
     const saved = await salvaAnalisi();
@@ -907,6 +930,7 @@ function AnalisiCosti() {
     ["voci", "Voci di costo"],
     ["dettaglio", "Analisi dettagliata"],
     ["controllo", "Controllo commessa"],
+    ["portfolio", "Portfolio"],
     ["cashflow", "Cash flow"],
     ["fabbisogni", "Fabbisogni"],
     ["varianti", "Varianti"],
@@ -1150,7 +1174,10 @@ function AnalisiCosti() {
             <button
               type="button"
               key={value}
-              onClick={() => setTab(value)}
+              onClick={() => {
+                setTab(value);
+                if (value === "portfolio") caricaPortfolio();
+              }}
               style={{
                 background: tab === value ? "#0b63ce" : "#fff",
                 color: tab === value ? "#fff" : "#102a43",
@@ -1382,13 +1409,19 @@ function AnalisiCosti() {
                   Budget operativo, impegni, costi reali, costo a finire e forecast finale.
                 </p>
               </div>
-              <button type="button" onClick={() => analisiId && caricaControlloEnterprise(analisiId)} disabled={!analisiId}>
-                Aggiorna controllo
-              </button>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button type="button" onClick={impostaBaseline} disabled={!voci.length} style={{ background: "#fff", color: "#0b63ce" }}>
+                  Imposta baseline
+                </button>
+                <button type="button" onClick={salvaAnalisi} disabled={!voci.length || salvando}>
+                  Salva e aggiorna controllo
+                </button>
+              </div>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(180px,1fr))", gap: "10px", marginBottom: "14px" }}>
               {[
+                ["Baseline", controlloKpi.baselineBudget, "#64748b"],
                 ["Budget base", controlloKpi.budgetBase, "#102a43"],
                 ["Varianti approvate", controlloKpi.variazioniApprovate, "#7c3aed"],
                 ["Budget autorizzato", controlloKpi.budgetAutorizzato, "#0b63ce"],
