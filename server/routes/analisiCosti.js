@@ -60,6 +60,12 @@ async function ensureSchema() {
   await query("CREATE INDEX IF NOT EXISTS analisi_costi_voci_analisi_idx ON analisi_costi_voci (analisi_id)");
   await query("CREATE TABLE IF NOT EXISTS analisi_costi_revisioni (id SERIAL PRIMARY KEY, analisi_id INTEGER NOT NULL REFERENCES analisi_costi(id) ON DELETE CASCADE, revisione INTEGER NOT NULL DEFAULT 0, snapshot JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
   await query("CREATE INDEX IF NOT EXISTS analisi_costi_revisioni_analisi_idx ON analisi_costi_revisioni (analisi_id, revisione DESC)");
+  await query("ALTER TABLE analisi_costi ADD COLUMN IF NOT EXISTS baseline JSONB NOT NULL DEFAULT '{}'::jsonb");
+  await query("ALTER TABLE analisi_costi_voci ADD COLUMN IF NOT EXISTS controllo JSONB NOT NULL DEFAULT '{}'::jsonb");
+  await query("CREATE TABLE IF NOT EXISTS analisi_costi_impegni (id SERIAL PRIMARY KEY, analisi_id INTEGER NOT NULL REFERENCES analisi_costi(id) ON DELETE CASCADE, wbs_codice TEXT, categoria TEXT NOT NULL DEFAULT 'Altro', fornitore TEXT, descrizione TEXT NOT NULL DEFAULT '', importo NUMERIC(14,2) NOT NULL DEFAULT 0, data DATE NOT NULL DEFAULT CURRENT_DATE, stato TEXT NOT NULL DEFAULT 'Impegnato', fonte TEXT NOT NULL DEFAULT 'Manuale', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+  await query("CREATE INDEX IF NOT EXISTS analisi_costi_impegni_analisi_idx ON analisi_costi_impegni (analisi_id, data DESC)");
+  await query("CREATE TABLE IF NOT EXISTS analisi_costi_varianti (id SERIAL PRIMARY KEY, analisi_id INTEGER NOT NULL REFERENCES analisi_costi(id) ON DELETE CASCADE, codice TEXT, descrizione TEXT NOT NULL DEFAULT '', importo NUMERIC(14,2) NOT NULL DEFAULT 0, impatto_costi NUMERIC(14,2) NOT NULL DEFAULT 0, impatto_giorni NUMERIC(10,2) NOT NULL DEFAULT 0, stato TEXT NOT NULL DEFAULT 'Proposta', data DATE NOT NULL DEFAULT CURRENT_DATE, note TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+  await query("CREATE INDEX IF NOT EXISTS analisi_costi_varianti_analisi_idx ON analisi_costi_varianti (analisi_id, data DESC)");
   schemaReady = true;
 }
 
@@ -86,6 +92,14 @@ function normalizeVoce(raw, index) {
     componenti: raw.componenti || {},
     cronoprogramma: raw.cronoprogramma || {},
     criticita: safeArray(raw.criticita),
+    controllo: {
+      wbsCodice: raw.controllo?.wbsCodice || "WBS-" + String(index + 1).padStart(3, "0"),
+      budgetOperativo: raw.controllo?.budgetOperativo ?? toNumber(raw.importo ?? raw.totale) ?? 0,
+      avanzamentoPct: raw.controllo?.avanzamentoPct ?? 0,
+      quantitaEseguita: raw.controllo?.quantitaEseguita ?? 0,
+      oreReali: raw.controllo?.oreReali ?? 0,
+      ...(raw.controllo && typeof raw.controllo === "object" ? raw.controllo : {}),
+    },
     note: clean(raw.note),
   };
 }
@@ -192,7 +206,7 @@ async function callOpenAIForDocument({ fileName, mimeType, dataUrl, textContent 
   const instructions = [
     "Analizza il documento come computo metrico, preventivo, consuntivo o elenco lavorazioni.",
     "Restituisci SOLO JSON valido senza markdown con questo schema:",
-    '{"titolo":"","cliente":"","cantiere":"","voci":[{"codice":"","descrizione":"","unita":"","quantita":0,"prezzoUnitario":0,"importo":0,"tipoCosto":"Materiali|Manodopera|Noleggi|Attrezzature|Mezzi/Trasferte|Altri costi|Da classificare","stato":"OK|Da verificare"}]}',
+    '{"titolo":"","cliente":"","cantiere":"","voci":[{"codice":"","descrizione":"","unita":"","quantita":0,"prezzoUnitario":0,"importo":0,"tipoCosto":"Materiali|Manodopera|Noleggi|Attrezzature|Mezzi/Trasferte|Sicurezza|Altri costi|Da classificare","stato":"OK|Da verificare"}]}',
     "Regole: estrai tutte le lavorazioni reali; non inventare prezzi o quantità mancanti; se un dato manca usa 0 o stringa vuota e stato Da verificare; mantieni descrizioni tecniche complete; classifica il tipo costo solo quando ragionevolmente certo.",
   ].join("\n");
 
@@ -425,7 +439,7 @@ async function saveRows(analisiId, rows) {
   for (const [index, raw] of rows.entries()) {
     const voce = normalizeVoce(raw, index);
     await query(
-      "INSERT INTO analisi_costi_voci (analisi_id, ordine, codice, descrizione, unita, quantita, prezzo_unitario, importo, tipo_costo, fonte, fonte_titolo, fonte_url, fonte_data, stato, componenti, cronoprogramma, criticita, note) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17::jsonb,$18)",
+      "INSERT INTO analisi_costi_voci (analisi_id, ordine, codice, descrizione, unita, quantita, prezzo_unitario, importo, tipo_costo, fonte, fonte_titolo, fonte_url, fonte_data, stato, componenti, cronoprogramma, criticita, controllo, note) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16::jsonb,$17::jsonb,$18::jsonb,$19)",
       [
         analisiId,
         voce.ordine,
@@ -444,6 +458,7 @@ async function saveRows(analisiId, rows) {
         JSON.stringify(voce.componenti || {}),
         JSON.stringify(voce.cronoprogramma || {}),
         JSON.stringify(voce.criticita || []),
+        JSON.stringify(voce.controllo || {}),
         voce.note,
       ],
     );
@@ -478,6 +493,7 @@ async function hydrate(id) {
     pastiPernotti: Number(h.pasti_pernotti || 0),
     stato: h.stato,
     revisione: h.revisione,
+    baseline: h.baseline || {},
     createdAt: h.created_at,
     updatedAt: h.updated_at,
     voci: rows.rows.map((row) => ({
@@ -498,6 +514,7 @@ async function hydrate(id) {
       componenti: row.componenti || {},
       cronoprogramma: row.cronoprogramma || {},
       criticita: row.criticita || [],
+      controllo: row.controllo || {},
       note: row.note || "",
     })),
   };
@@ -511,6 +528,529 @@ async function saveRevision(analisiId) {
     [analisiId, current.revisione || 0, JSON.stringify(current)],
   );
 }
+
+function monthKey(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 7);
+}
+
+function monthsBetween(startValue, endValue) {
+  const start = startValue ? new Date(startValue) : new Date();
+  const end = endValue ? new Date(endValue) : start;
+  const first = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+  const last = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+  const result = [];
+  const cursor = new Date(first);
+  while (cursor <= last && result.length < 120) {
+    result.push(cursor.toISOString().slice(0, 7));
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+  return result.length ? result : [new Date().toISOString().slice(0, 7)];
+}
+
+function weightedProgress(voci, fallbackPct = 0) {
+  const rows = safeArray(voci);
+  const totalBudget = rows.reduce((tot, voce) => {
+    const budget = toNumber(voce.controllo?.budgetOperativo) || toNumber(voce.importo);
+    return tot + Math.max(0, budget);
+  }, 0);
+  if (!totalBudget) return Math.max(0, Math.min(100, toNumber(fallbackPct)));
+
+  const hasLineProgress = rows.some((voce) => toNumber(voce.controllo?.avanzamentoPct) > 0);
+  const fallback = Math.max(0, Math.min(100, toNumber(fallbackPct)));
+  const earned = rows.reduce((tot, voce) => {
+    const budget = toNumber(voce.controllo?.budgetOperativo) || toNumber(voce.importo);
+    const progress = hasLineProgress
+      ? Math.max(0, Math.min(100, toNumber(voce.controllo?.avanzamentoPct)))
+      : fallback;
+    return tot + budget * progress / 100;
+  }, 0);
+  return Math.max(0, Math.min(100, earned / totalBudget * 100));
+}
+
+function plannedProgressFromDates(startValue, endValue) {
+  if (!startValue || !endValue) return 0;
+  const start = new Date(startValue).getTime();
+  const end = new Date(endValue).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
+  const now = Date.now();
+  if (now <= start) return 0;
+  if (now >= end) return 100;
+  return Math.max(0, Math.min(100, (now - start) / (end - start) * 100));
+}
+
+function weightedPlannedProgress(voci, fallbackStart, fallbackEnd) {
+  const rows = safeArray(voci);
+  const totalBudget = rows.reduce((tot, voce) => {
+    const budget = toNumber(voce.controllo?.budgetOperativo) || toNumber(voce.importo);
+    return tot + Math.max(0, budget);
+  }, 0);
+  if (!totalBudget) return plannedProgressFromDates(fallbackStart, fallbackEnd);
+
+  const plannedValuePct = rows.reduce((tot, voce) => {
+    const budget = toNumber(voce.controllo?.budgetOperativo) || toNumber(voce.importo);
+    const start = voce.controllo?.dataInizioPrevista || fallbackStart;
+    const end = voce.controllo?.dataFinePrevista || fallbackEnd;
+    const pct = plannedProgressFromDates(start, end);
+    return tot + budget * pct;
+  }, 0);
+
+  return Math.max(0, Math.min(100, plannedValuePct / totalBudget));
+}
+
+async function getEnterpriseDashboard(item) {
+  let cantiere = null;
+  let movimenti = [];
+  let ordini = [];
+  let rapportini = [];
+  let salRows = [];
+  let magazzino = [];
+
+  if (item.cantiereId) {
+    const [cantiereDb, movimentiDb, ordiniDb, rapportiniDb, salDb] = await Promise.all([
+      query("SELECT id, nome, data_inizio, data_fine_prevista, importo, stato FROM cantieri WHERE id::text = $1::text LIMIT 1", [String(item.cantiereId)]),
+      query("SELECT id, data, tipo, categoria, descrizione, importo FROM movimenti_contabili WHERE cantiere_id::text = $1::text ORDER BY data ASC, id ASC", [String(item.cantiereId)]),
+      query("SELECT id, numero, data, fornitore, materiale, quantita, importo, stato FROM ordini_materiali WHERE cantiere_id::text = $1::text ORDER BY data ASC, id ASC", [String(item.cantiereId)]),
+      query("SELECT id, data, ore, operai, attivita, materiali, mezzi FROM rapportini WHERE cantiere_id::text = $1::text ORDER BY data ASC, id ASC", [String(item.cantiereId)]),
+      query("SELECT id, data, percentuale, maturato, residuo FROM sal WHERE cantiere_id::text = $1::text ORDER BY data ASC, id ASC", [String(item.cantiereId)]),
+    ]);
+    cantiere = cantiereDb.rows[0] || null;
+    movimenti = movimentiDb.rows;
+    ordini = ordiniDb.rows;
+    rapportini = rapportiniDb.rows;
+    salRows = salDb.rows;
+  }
+
+  try {
+    const stock = await query("SELECT id, codice, descrizione, unita, quantita, costo, scorta_minima FROM materiali_magazzino ORDER BY descrizione");
+    magazzino = stock.rows;
+  } catch {
+    magazzino = [];
+  }
+
+  const manualCommitments = await query(
+    "SELECT id, wbs_codice, categoria, fornitore, descrizione, importo, data, stato, fonte FROM analisi_costi_impegni WHERE analisi_id = $1 ORDER BY data ASC, id ASC",
+    [item.id],
+  );
+  const variationsDb = await query(
+    "SELECT id, codice, descrizione, importo, impatto_costi, impatto_giorni, stato, data, note FROM analisi_costi_varianti WHERE analisi_id = $1 ORDER BY data ASC, id ASC",
+    [item.id],
+  );
+
+  const budgetBase = item.voci.reduce((tot, voce) => {
+    const budget = toNumber(voce.controllo?.budgetOperativo) || toNumber(voce.importo);
+    return tot + Math.max(0, budget);
+  }, 0);
+
+  const variantiApprovate = variationsDb.rows.filter((row) => normalize(row.stato) === "approvata");
+  const variazioniApprovate = variantiApprovate.reduce(
+    (tot, row) => tot + toNumber(row.impatto_costi || row.importo),
+    0,
+  );
+  const ricavoVariantiApprovate = variantiApprovate.reduce(
+    (tot, row) => tot + toNumber(row.importo),
+    0,
+  );
+
+  const baselineBudget = toNumber(item.baseline?.budgetBase || item.baseline?.budgetAutorizzato);
+  const budgetAutorizzato = budgetBase + variazioniApprovate;
+  const costoReale = movimenti
+    .filter((row) => normalize(row.tipo) === "uscita")
+    .reduce((tot, row) => tot + toNumber(row.importo), 0);
+
+  const impegniOrdini = ordini
+    .filter((row) => !["annullato", "annullata", "cancellato"].includes(normalize(row.stato)))
+    .reduce((tot, row) => tot + toNumber(row.importo), 0);
+  const impegniManuali = manualCommitments.rows
+    .filter((row) => !["annullato", "annullata", "cancellato"].includes(normalize(row.stato)))
+    .reduce((tot, row) => tot + toNumber(row.importo), 0);
+  const impegnato = impegniOrdini + impegniManuali;
+
+  const oreReali = rapportini.reduce((tot, row) => tot + toNumber(row.ore), 0);
+  const costoManodoperaRealeStimato = oreReali * toNumber(item.costoManodoperaOra || 28);
+
+  const latestSal = salRows.length ? salRows[salRows.length - 1] : null;
+  const salPct = toNumber(latestSal?.percentuale);
+  const avanzamentoPct = weightedProgress(item.voci, salPct);
+  const plannedPct = weightedPlannedProgress(item.voci, cantiere?.data_inizio, cantiere?.data_fine_prevista);
+
+  const earnedValue = budgetAutorizzato * avanzamentoPct / 100;
+  const plannedValue = budgetAutorizzato * plannedPct / 100;
+  const actualCost = costoReale;
+  const cpi = actualCost > 0 ? earnedValue / actualCost : 0;
+  const spi = plannedValue > 0 ? earnedValue / plannedValue : 0;
+  const eacDaCpi = cpi > 0 ? budgetAutorizzato / cpi : actualCost + Math.max(0, budgetAutorizzato - earnedValue);
+  const residuoBudget = Math.max(0, budgetAutorizzato - earnedValue);
+  const impegniNonCoperti = Math.max(0, impegnato - actualCost);
+  const etc = Math.max(0, eacDaCpi - actualCost, residuoBudget, impegniNonCoperti);
+  const eac = actualCost + etc;
+  const vac = budgetAutorizzato - eac;
+
+  const ricavo = item.preventivoId
+    ? await query("SELECT imponibile, totale FROM preventivi WHERE id::text = $1::text LIMIT 1", [String(item.preventivoId)])
+    : { rows: [] };
+  const ricavoContrattualeBase = toNumber(ricavo.rows[0]?.imponibile || ricavo.rows[0]?.totale);
+  const ricavoContrattuale = ricavoContrattualeBase + ricavoVariantiApprovate;
+
+  const datedRows = item.voci.filter(
+    (voce) => voce.controllo?.dataInizioPrevista && voce.controllo?.dataFinePrevista,
+  );
+  const dateCandidates = [
+    cantiere?.data_inizio,
+    cantiere?.data_fine_prevista,
+    ...datedRows.flatMap((voce) => [
+      voce.controllo.dataInizioPrevista,
+      voce.controllo.dataFinePrevista,
+    ]),
+    ...movimenti.map((row) => row.data),
+    ...ordini.map((row) => row.data),
+    ...manualCommitments.rows.map((row) => row.data),
+  ].filter(Boolean).map((value) => new Date(value)).filter((date) => !Number.isNaN(date.getTime()));
+
+  const sortedDates = dateCandidates.sort((a, b) => a.getTime() - b.getTime());
+  const globalStart = sortedDates[0]?.toISOString().slice(0, 10) || new Date().toISOString().slice(0, 10);
+  const globalEnd = sortedDates[sortedDates.length - 1]?.toISOString().slice(0, 10) || globalStart;
+  const months = monthsBetween(globalStart, globalEnd);
+  const undatedBudget = item.voci
+    .filter((voce) => !(voce.controllo?.dataInizioPrevista && voce.controllo?.dataFinePrevista))
+    .reduce((tot, voce) => tot + (toNumber(voce.controllo?.budgetOperativo) || toNumber(voce.importo)), 0);
+  const undatedPerMonth = months.length ? undatedBudget / months.length : undatedBudget;
+
+  const cashflow = months.map((month) => {
+    const plannedDated = datedRows.reduce((tot, voce) => {
+      const voceMonths = monthsBetween(voce.controllo.dataInizioPrevista, voce.controllo.dataFinePrevista);
+      if (!voceMonths.includes(month)) return tot;
+      const budget = toNumber(voce.controllo?.budgetOperativo) || toNumber(voce.importo);
+      return tot + (voceMonths.length ? budget / voceMonths.length : budget);
+    }, 0);
+    const planned = plannedDated + undatedPerMonth;
+
+    const actual = movimenti
+      .filter((row) => normalize(row.tipo) === "uscita" && monthKey(row.data) === month)
+      .reduce((tot, row) => tot + toNumber(row.importo), 0);
+    const committed = ordini
+      .filter((row) => monthKey(row.data) === month)
+      .reduce((tot, row) => tot + toNumber(row.importo), 0) +
+      manualCommitments.rows
+        .filter((row) => monthKey(row.data) === month)
+        .reduce((tot, row) => tot + toNumber(row.importo), 0);
+    return {
+      mese: month,
+      previsto: planned,
+      consuntivo: actual,
+      impegnato: committed,
+      scostamento: actual - planned,
+    };
+  });
+
+  const needsMap = new Map();
+  for (const voce of item.voci) {
+    for (const materiale of safeArray(voce.componenti?.materiali)) {
+      const codice = clean(materiale.codice || materiale.codiceArticolo);
+      const descrizione = clean(materiale.descrizione);
+      const key = normalize(codice || descrizione);
+      if (!key) continue;
+      const current = needsMap.get(key) || {
+        codice,
+        descrizione,
+        unita: clean(materiale.unita),
+        richiesto: 0,
+      };
+      current.richiesto += toNumber(materiale.quantita);
+      needsMap.set(key, current);
+    }
+  }
+
+  const fabbisogni = Array.from(needsMap.values()).map((need) => {
+    const stock = magazzino.find((item) =>
+      (need.codice && normalize(item.codice) === normalize(need.codice)) ||
+      (!need.codice && normalize(item.descrizione) === normalize(need.descrizione))
+    );
+    const disponibile = toNumber(stock?.quantita);
+    return {
+      ...need,
+      disponibile,
+      daOrdinare: Math.max(0, need.richiesto - disponibile),
+      costoUnitarioMagazzino: toNumber(stock?.costo),
+      valoreDaOrdinare: Math.max(0, need.richiesto - disponibile) * toNumber(stock?.costo),
+    };
+  });
+
+  const oreRealiWbs = item.voci.reduce((tot, voce) => tot + toNumber(voce.controllo?.oreReali), 0);
+  const oreEffettive = oreRealiWbs > 0 ? oreRealiWbs : oreReali;
+  const produttivitaRighe = item.voci.map((voce) => {
+    const qPrevista = toNumber(voce.quantita);
+    const qEseguita = toNumber(voce.controllo?.quantitaEseguita);
+    const orePreviste = toNumber(voce.cronoprogramma?.oreTotali);
+    const oreRigaReali = toNumber(voce.controllo?.oreReali);
+    const resaPrevista = qPrevista > 0 && orePreviste > 0 ? qPrevista / orePreviste : 0;
+    const resaReale = qEseguita > 0 && oreRigaReali > 0 ? qEseguita / oreRigaReali : 0;
+    return {
+      wbsCodice: voce.controllo?.wbsCodice || "",
+      descrizione: voce.descrizione,
+      unita: voce.unita,
+      quantitaPrevista: qPrevista,
+      quantitaEseguita: qEseguita,
+      orePreviste,
+      oreReali: oreRigaReali,
+      resaPrevista,
+      resaReale,
+      scostamentoResaPct: resaPrevista > 0 && resaReale > 0 ? (resaReale / resaPrevista - 1) * 100 : 0,
+    };
+  });
+
+  const produttivita = {
+    oreReali: oreEffettive,
+    oreRealiRapportini: oreReali,
+    oreRealiWbs,
+    costoManodoperaRealeStimato: oreEffettive * toNumber(item.costoManodoperaOra || 28),
+    righe: produttivitaRighe,
+  };
+
+  const alerts = [];
+  if (budgetAutorizzato > 0 && eac > budgetAutorizzato) {
+    alerts.push({ livello: "Alta", tipo: "Forecast", messaggio: "Il costo finale previsto supera il budget autorizzato di " + (eac - budgetAutorizzato).toFixed(2) + " EUR." });
+  }
+  if (ricavoContrattuale > 0 && ricavoContrattuale - eac < 0) {
+    alerts.push({ livello: "Alta", tipo: "Margine", messaggio: "Il forecast indica un margine finale negativo." });
+  }
+  if (cpi > 0 && cpi < 0.95) {
+    alerts.push({ livello: cpi < 0.85 ? "Alta" : "Media", tipo: "Costi", messaggio: "CPI inferiore a 0,95: efficienza economica sotto obiettivo." });
+  }
+  if (spi > 0 && spi < 0.95) {
+    alerts.push({ livello: spi < 0.85 ? "Alta" : "Media", tipo: "Tempi", messaggio: "SPI inferiore a 0,95: avanzamento in ritardo rispetto al piano." });
+  }
+  if (budgetAutorizzato > 0 && impegnato > budgetAutorizzato) {
+    alerts.push({ livello: "Alta", tipo: "Impegni", messaggio: "Gli impegni superano il budget autorizzato." });
+  }
+  const shortageCount = fabbisogni.filter((item) => toNumber(item.daOrdinare) > 0).length;
+  if (shortageCount > 0) {
+    alerts.push({ livello: "Media", tipo: "Materiali", messaggio: shortageCount + " materiali risultano da ordinare rispetto al fabbisogno." });
+  }
+  if (baselineBudget > 0 && budgetAutorizzato > baselineBudget) {
+    alerts.push({ livello: "Media", tipo: "Baseline", messaggio: "Il budget autorizzato è aumentato rispetto alla baseline di " + (budgetAutorizzato - baselineBudget).toFixed(2) + " EUR." });
+  }
+
+  return {
+    cantiere,
+    kpi: {
+      baselineBudget,
+      scostamentoBaseline: budgetAutorizzato - baselineBudget,
+      budgetBase,
+      variazioniApprovate,
+      ricavoVariantiApprovate,
+      budgetAutorizzato,
+      impegnato,
+      costoReale,
+      etc,
+      eac,
+      vac,
+      ricavoContrattuale,
+      marginePrevisto: ricavoContrattuale - eac,
+      avanzamentoPct,
+      plannedPct,
+      earnedValue,
+      plannedValue,
+      cpi,
+      spi,
+      oreReali,
+      costoManodoperaRealeStimato,
+    },
+    cashflow,
+    fabbisogni,
+    produttivita,
+    alerts,
+    ordini,
+    impegni: manualCommitments.rows,
+    varianti: variationsDb.rows,
+    movimenti,
+    rapportini,
+    sal: salRows,
+  };
+}
+
+router.post("/:id/baseline", async (req, res, next) => {
+  try {
+    await ensureSchema();
+    const item = await hydrate(req.params.id);
+    if (!item) return res.status(404).json({ message: "Analisi costi non trovata." });
+    const dashboard = await getEnterpriseDashboard(item);
+    const snapshot = {
+      impostataIl: new Date().toISOString(),
+      revisione: item.revisione || 0,
+      budgetBase: dashboard.kpi.budgetBase,
+      budgetAutorizzato: dashboard.kpi.budgetAutorizzato,
+      voci: item.voci.map((voce) => ({
+        wbsCodice: voce.controllo?.wbsCodice || "",
+        descrizione: voce.descrizione,
+        budgetOperativo: toNumber(voce.controllo?.budgetOperativo) || toNumber(voce.importo),
+        quantita: toNumber(voce.quantita),
+      })),
+    };
+    await query("UPDATE analisi_costi SET baseline = $2::jsonb, updated_at = NOW() WHERE id = $1", [req.params.id, JSON.stringify(snapshot)]);
+    res.json(snapshot);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/portfolio/commesse", async (_req, res, next) => {
+  try {
+    await ensureSchema();
+    const ids = await query("SELECT id FROM analisi_costi ORDER BY updated_at DESC, id DESC LIMIT 100");
+    const portfolio = [];
+    for (const row of ids.rows) {
+      const item = await hydrate(row.id);
+      if (!item) continue;
+      const dashboard = await getEnterpriseDashboard(item);
+      portfolio.push({
+        id: item.id,
+        titolo: item.titolo,
+        clienteNome: item.clienteNome,
+        cantiereId: item.cantiereId,
+        stato: item.stato,
+        revisione: item.revisione,
+        kpi: dashboard.kpi,
+      });
+    }
+    res.json(portfolio);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id/dashboard", async (req, res, next) => {
+  try {
+    await ensureSchema();
+    const item = await hydrate(req.params.id);
+    if (!item) return res.status(404).json({ message: "Analisi costi non trovata." });
+    res.json(await getEnterpriseDashboard(item));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id/impegni", async (req, res, next) => {
+  try {
+    await ensureSchema();
+    const result = await query(
+      "SELECT id, wbs_codice, categoria, fornitore, descrizione, importo, data, stato, fonte FROM analisi_costi_impegni WHERE analisi_id = $1 ORDER BY data DESC, id DESC",
+      [req.params.id],
+    );
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/impegni", async (req, res, next) => {
+  try {
+    await ensureSchema();
+    const body = req.body || {};
+    const result = await query(
+      "INSERT INTO analisi_costi_impegni (analisi_id, wbs_codice, categoria, fornitore, descrizione, importo, data, stato, fonte) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *",
+      [
+        req.params.id,
+        clean(body.wbsCodice),
+        clean(body.categoria) || "Altro",
+        clean(body.fornitore),
+        clean(body.descrizione),
+        toNumber(body.importo),
+        clean(body.data) || new Date().toISOString().slice(0, 10),
+        clean(body.stato) || "Impegnato",
+        clean(body.fonte) || "Manuale",
+      ],
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/:id/impegni/:impegnoId", async (req, res, next) => {
+  try {
+    await ensureSchema();
+    await query("DELETE FROM analisi_costi_impegni WHERE id = $1 AND analisi_id = $2", [req.params.impegnoId, req.params.id]);
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/:id/varianti", async (req, res, next) => {
+  try {
+    await ensureSchema();
+    const result = await query(
+      "SELECT id, codice, descrizione, importo, impatto_costi, impatto_giorni, stato, data, note FROM analisi_costi_varianti WHERE analisi_id = $1 ORDER BY data DESC, id DESC",
+      [req.params.id],
+    );
+    res.json(result.rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:id/varianti", async (req, res, next) => {
+  try {
+    await ensureSchema();
+    const body = req.body || {};
+    const result = await query(
+      "INSERT INTO analisi_costi_varianti (analisi_id, codice, descrizione, importo, impatto_costi, impatto_giorni, stato, data, note) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *",
+      [
+        req.params.id,
+        clean(body.codice),
+        clean(body.descrizione),
+        toNumber(body.importo),
+        toNumber(body.impattoCosti ?? body.importo),
+        toNumber(body.impattoGiorni),
+        clean(body.stato) || "Proposta",
+        clean(body.data) || new Date().toISOString().slice(0, 10),
+        clean(body.note),
+      ],
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put("/:id/varianti/:varianteId", async (req, res, next) => {
+  try {
+    await ensureSchema();
+    const body = req.body || {};
+    const result = await query(
+      "UPDATE analisi_costi_varianti SET codice=$3, descrizione=$4, importo=$5, impatto_costi=$6, impatto_giorni=$7, stato=$8, data=$9, note=$10, updated_at=NOW() WHERE id=$1 AND analisi_id=$2 RETURNING *",
+      [
+        req.params.varianteId,
+        req.params.id,
+        clean(body.codice),
+        clean(body.descrizione),
+        toNumber(body.importo),
+        toNumber(body.impattoCosti ?? body.importo),
+        toNumber(body.impattoGiorni),
+        clean(body.stato) || "Proposta",
+        clean(body.data) || new Date().toISOString().slice(0, 10),
+        clean(body.note),
+      ],
+    );
+    if (!result.rows[0]) return res.status(404).json({ message: "Variante non trovata." });
+    res.json(result.rows[0]);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/:id/varianti/:varianteId", async (req, res, next) => {
+  try {
+    await ensureSchema();
+    await query("DELETE FROM analisi_costi_varianti WHERE id = $1 AND analisi_id = $2", [req.params.varianteId, req.params.id]);
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get("/:id/revisioni", async (req, res, next) => {
   try {

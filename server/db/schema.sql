@@ -282,6 +282,7 @@ CREATE TABLE IF NOT EXISTS analisi_costi (
   pasti_pernotti NUMERIC(12,2) NOT NULL DEFAULT 0,
   stato TEXT NOT NULL DEFAULT 'BOZZA',
   revisione INTEGER NOT NULL DEFAULT 0,
+  baseline JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -305,6 +306,7 @@ CREATE TABLE IF NOT EXISTS analisi_costi_voci (
   componenti JSONB NOT NULL DEFAULT '{}'::jsonb,
   cronoprogramma JSONB NOT NULL DEFAULT '{}'::jsonb,
   criticita JSONB NOT NULL DEFAULT '[]'::jsonb,
+  controllo JSONB NOT NULL DEFAULT '{}'::jsonb,
   note TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -324,3 +326,40 @@ CREATE TABLE IF NOT EXISTS analisi_costi_revisioni (
 
 CREATE INDEX IF NOT EXISTS analisi_costi_revisioni_analisi_idx
   ON analisi_costi_revisioni (analisi_id, revisione DESC);
+
+
+CREATE TABLE IF NOT EXISTS analisi_costi_impegni (
+  id SERIAL PRIMARY KEY,
+  analisi_id INTEGER NOT NULL REFERENCES analisi_costi(id) ON DELETE CASCADE,
+  wbs_codice TEXT,
+  categoria TEXT NOT NULL DEFAULT 'Altro',
+  fornitore TEXT,
+  descrizione TEXT NOT NULL DEFAULT '',
+  importo NUMERIC(14,2) NOT NULL DEFAULT 0,
+  data DATE NOT NULL DEFAULT CURRENT_DATE,
+  stato TEXT NOT NULL DEFAULT 'Impegnato',
+  fonte TEXT NOT NULL DEFAULT 'Manuale',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS analisi_costi_impegni_analisi_idx
+  ON analisi_costi_impegni (analisi_id, data DESC);
+
+CREATE TABLE IF NOT EXISTS analisi_costi_varianti (
+  id SERIAL PRIMARY KEY,
+  analisi_id INTEGER NOT NULL REFERENCES analisi_costi(id) ON DELETE CASCADE,
+  codice TEXT,
+  descrizione TEXT NOT NULL DEFAULT '',
+  importo NUMERIC(14,2) NOT NULL DEFAULT 0,
+  impatto_costi NUMERIC(14,2) NOT NULL DEFAULT 0,
+  impatto_giorni NUMERIC(10,2) NOT NULL DEFAULT 0,
+  stato TEXT NOT NULL DEFAULT 'Proposta',
+  data DATE NOT NULL DEFAULT CURRENT_DATE,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS analisi_costi_varianti_analisi_idx
+  ON analisi_costi_varianti (analisi_id, data DESC);

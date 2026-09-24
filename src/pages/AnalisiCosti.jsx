@@ -26,6 +26,7 @@ const TIPI_COSTO = [
   "Noleggi",
   "Attrezzature",
   "Mezzi/Trasferte",
+  "Sicurezza",
   "Altri costi",
   "Da classificare",
 ];
@@ -47,6 +48,10 @@ function numero(value) {
     .replace(",", ".");
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeStatus(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
 function dataUrl(file) {
@@ -96,6 +101,12 @@ function normalizzaRigaFoglio(row, index) {
     componenti: {},
     cronoprogramma: {},
     criticita: numero(prezzo) > 0 ? [] : ["Prezzo unitario mancante"],
+    controllo: {
+      wbsCodice: "WBS-" + String(index + 1).padStart(3, "0"),
+      budgetOperativo: numero(importo) || numero(quantita) * numero(prezzo),
+      avanzamentoPct: 0,
+      quantitaEseguita: 0,
+    },
     note: "",
   };
 }
@@ -139,6 +150,26 @@ function AnalisiCosti() {
   const [preventivoId, setPreventivoId] = useState(null);
   const [revisioni, setRevisioni] = useState([]);
   const [confronto, setConfronto] = useState(null);
+  const [dashboard, setDashboard] = useState(null);
+  const [portfolio, setPortfolio] = useState([]);
+  const [impegni, setImpegni] = useState([]);
+  const [varianti, setVarianti] = useState([]);
+  const [nuovoImpegno, setNuovoImpegno] = useState({
+    wbsCodice: "",
+    categoria: "Subappalto",
+    fornitore: "",
+    descrizione: "",
+    importo: "",
+    stato: "Impegnato",
+  });
+  const [nuovaVariante, setNuovaVariante] = useState({
+    codice: "",
+    descrizione: "",
+    importo: "",
+    impattoCosti: "",
+    impattoGiorni: "",
+    stato: "Proposta",
+  });
   const [storico, setStorico] = useState([]);
   const [storicoId, setStoricoId] = useState("");
   const [tab, setTab] = useState("voci");
@@ -203,7 +234,7 @@ function AnalisiCosti() {
     const materiali = somma(["Materiali"]);
     const noleggi = somma(["Noleggi", "Attrezzature"]);
     const manodopera = somma(["Manodopera"]);
-    const altri = somma(["Mezzi/Trasferte", "Altri costi"]) + costoTrasferteExtra;
+    const altri = somma(["Mezzi/Trasferte", "Sicurezza", "Altri costi"]) + costoTrasferteExtra;
     const diretto = materiali + noleggi + manodopera + altri;
     const speseGenerali = diretto * (numero(speseGeneraliPct) / 100);
     const baseMargine = diretto + speseGenerali;
@@ -277,6 +308,19 @@ function AnalisiCosti() {
             : Array.from(new Set([...(next.criticita || []), "Prezzo unitario mancante"]));
         }
         return next;
+      }),
+    );
+  }
+
+  function aggiornaControlloVoce(index, campo, valore) {
+    setVoci((correnti) =>
+      correnti.map((voce, i) => {
+        if (i !== index) return voce;
+        const controllo = {
+          ...(voce.controllo || {}),
+          [campo]: valore,
+        };
+        return { ...voce, controllo };
       }),
     );
   }
@@ -444,6 +488,26 @@ function AnalisiCosti() {
     };
   }
 
+  async function caricaControlloEnterprise(id) {
+    if (!id) {
+      setDashboard(null);
+      setImpegni([]);
+      setVarianti([]);
+      return null;
+    }
+
+    try {
+      const data = await api.get("/analisi-costi/" + id + "/dashboard");
+      setDashboard(data || null);
+      setImpegni(Array.isArray(data?.impegni) ? data.impegni : []);
+      setVarianti(Array.isArray(data?.varianti) ? data.varianti : []);
+      return data;
+    } catch {
+      setDashboard(null);
+      return null;
+    }
+  }
+
   async function salvaAnalisi() {
     if (!voci.length) {
       setErrore("Non ci sono voci da salvare.");
@@ -467,6 +531,7 @@ function AnalisiCosti() {
       setStorico(Array.isArray(storicoDb) ? storicoDb : []);
       setRevisioni(Array.isArray(revDb) ? revDb : []);
       setConfronto(confDb || null);
+      await caricaControlloEnterprise(saved.id);
       return saved;
     } catch (error) {
       setErrore(error.message || "Salvataggio non riuscito.");
@@ -507,6 +572,7 @@ function AnalisiCosti() {
       ]);
       setRevisioni(Array.isArray(revDb) ? revDb : []);
       setConfronto(confDb || null);
+      await caricaControlloEnterprise(saved.id);
       setMessaggio("Analisi salvata caricata.");
     } catch (error) {
       setErrore(error.message || "Impossibile aprire l'analisi.");
@@ -636,6 +702,55 @@ function AnalisiCosti() {
       ["Viaggi", numeroViaggi],
     ]);
     XLSX.utils.book_append_sheet(wb, summary, "Riepilogo");
+
+    const controlloRows = voci.map((voce, index) => ({
+      WBS: voce.controllo?.wbsCodice || "WBS-" + String(index + 1).padStart(3, "0"),
+      Descrizione: voce.descrizione,
+      BudgetAnalisi: numero(voce.importo),
+      BudgetOperativo: numero(voce.controllo?.budgetOperativo ?? voce.importo),
+      AvanzamentoPct: numero(voce.controllo?.avanzamentoPct),
+      QuantitaPrevista: numero(voce.quantita),
+      QuantitaEseguita: numero(voce.controllo?.quantitaEseguita),
+      OrePreviste: numero(voce.cronoprogramma?.oreTotali),
+      OreReali: numero(voce.controllo?.oreReali),
+      InizioPrevisto: voce.controllo?.dataInizioPrevista || "",
+      FinePrevista: voce.controllo?.dataFinePrevista || "",
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(controlloRows), "WBS Controllo");
+
+    if (dashboard?.cashflow?.length) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dashboard.cashflow), "Cash Flow");
+    }
+    if (dashboard?.fabbisogni?.length) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dashboard.fabbisogni), "Fabbisogni");
+    }
+    if (varianti.length) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(varianti), "Varianti");
+    }
+    if (impegni.length || dashboard?.ordini?.length) {
+      const impegniExport = [
+        ...(dashboard?.ordini || []).map((item) => ({
+          Fonte: "Ordine",
+          WBS: "",
+          Categoria: "Materiali",
+          Fornitore: item.fornitore,
+          Descrizione: item.materiale,
+          Importo: numero(item.importo),
+          Stato: item.stato,
+        })),
+        ...impegni.map((item) => ({
+          Fonte: item.fonte || "Manuale",
+          WBS: item.wbs_codice || item.wbsCodice || "",
+          Categoria: item.categoria,
+          Fornitore: item.fornitore,
+          Descrizione: item.descrizione,
+          Importo: numero(item.importo),
+          Stato: item.stato,
+        })),
+      ];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(impegniExport), "Impegni");
+    }
+
     XLSX.writeFile(wb, (titolo || "analisi-costi").replace(/[^a-z0-9_-]/gi, "_") + ".xlsx");
   }
 
@@ -646,9 +761,19 @@ function AnalisiCosti() {
     doc.setFontSize(9);
     doc.text("Sede: " + sede + " | Destinazione: " + (destinazione || "-"), 14, 22);
     doc.text("Costo diretto: " + euro.format(riepilogo.diretto) + " | Prezzo vendita: " + euro.format(riepilogo.vendita), 14, 28);
+    if (dashboard?.kpi) {
+      doc.text(
+        "Budget autorizzato: " + euro.format(dashboard.kpi.budgetAutorizzato || 0) +
+          " | Impegnato: " + euro.format(dashboard.kpi.impegnato || 0) +
+          " | EAC: " + euro.format(dashboard.kpi.eac || 0) +
+          " | Margine previsto: " + euro.format(dashboard.kpi.marginePrevisto || 0),
+        14,
+        33,
+      );
+    }
 
     autoTable(doc, {
-      startY: 34,
+      startY: dashboard?.kpi ? 39 : 34,
       head: [["N.", "Descrizione", "UM", "Q.tà", "Prezzo unit.", "Importo", "Tipo", "Fonte", "Stato"]],
       body: voci.map((voce) => [
         voce.ordine + 1,
@@ -700,6 +825,12 @@ function AnalisiCosti() {
           componenti: {},
           cronoprogramma: {},
           criticita: numero(articolo.ultimoPrezzo) > 0 ? [] : ["Prezzo unitario mancante"],
+          controllo: {
+            wbsCodice: "WBS-" + String(correnti.length + 1).padStart(3, "0"),
+            budgetOperativo: numero(articolo.ultimoPrezzo),
+            avanzamentoPct: 0,
+            quantitaEseguita: 0,
+          },
         },
       ]);
       setMessaggio("Articolo DDT aggiunto all'analisi.");
@@ -708,9 +839,160 @@ function AnalisiCosti() {
     }
   }
 
+  async function caricaPortfolio() {
+    try {
+      const data = await api.get("/analisi-costi/portfolio/commesse");
+      setPortfolio(Array.isArray(data) ? data : []);
+    } catch (error) {
+      setErrore(error.message || "Impossibile caricare il portfolio commesse.");
+    }
+  }
+
+  async function impostaBaseline() {
+    const id = await assicuraAnalisiSalvata();
+    if (!id) return;
+    try {
+      await api.post("/analisi-costi/" + id + "/baseline", {});
+      await caricaControlloEnterprise(id);
+      setMessaggio("Baseline economica impostata sulla revisione corrente.");
+    } catch (error) {
+      setErrore(error.message || "Impossibile impostare la baseline.");
+    }
+  }
+
+  async function assicuraAnalisiSalvata() {
+    if (analisiId) return analisiId;
+    const saved = await salvaAnalisi();
+    return saved?.id || null;
+  }
+
+  async function aggiungiImpegno() {
+    const id = await assicuraAnalisiSalvata();
+    if (!id) return;
+    if (!String(nuovoImpegno.descrizione || "").trim() || !numero(nuovoImpegno.importo)) {
+      setErrore("Inserisci descrizione e importo dell'impegno.");
+      return;
+    }
+
+    try {
+      await api.post("/analisi-costi/" + id + "/impegni", {
+        ...nuovoImpegno,
+        importo: numero(nuovoImpegno.importo),
+        data: new Date().toISOString().slice(0, 10),
+      });
+      setNuovoImpegno({
+        wbsCodice: "",
+        categoria: "Subappalto",
+        fornitore: "",
+        descrizione: "",
+        importo: "",
+        stato: "Impegnato",
+      });
+      await caricaControlloEnterprise(id);
+      setMessaggio("Impegno aggiunto al controllo commessa.");
+    } catch (error) {
+      setErrore(error.message || "Impossibile aggiungere l'impegno.");
+    }
+  }
+
+  async function eliminaImpegno(idImpegno) {
+    if (!analisiId || !idImpegno) return;
+    try {
+      await api.delete("/analisi-costi/" + analisiId + "/impegni/" + idImpegno);
+      await caricaControlloEnterprise(analisiId);
+    } catch (error) {
+      setErrore(error.message || "Impossibile eliminare l'impegno.");
+    }
+  }
+
+  async function aggiungiVariante() {
+    const id = await assicuraAnalisiSalvata();
+    if (!id) return;
+    if (!String(nuovaVariante.descrizione || "").trim()) {
+      setErrore("Inserisci la descrizione della variante.");
+      return;
+    }
+
+    try {
+      await api.post("/analisi-costi/" + id + "/varianti", {
+        ...nuovaVariante,
+        importo: numero(nuovaVariante.importo),
+        impattoCosti: numero(nuovaVariante.impattoCosti || nuovaVariante.importo),
+        impattoGiorni: numero(nuovaVariante.impattoGiorni),
+        data: new Date().toISOString().slice(0, 10),
+      });
+      setNuovaVariante({
+        codice: "",
+        descrizione: "",
+        importo: "",
+        impattoCosti: "",
+        impattoGiorni: "",
+        stato: "Proposta",
+      });
+      await caricaControlloEnterprise(id);
+      setMessaggio("Variante aggiunta.");
+    } catch (error) {
+      setErrore(error.message || "Impossibile aggiungere la variante.");
+    }
+  }
+
+  async function aggiornaStatoVariante(variante, stato) {
+    if (!analisiId || !variante?.id) return;
+    try {
+      await api.put("/analisi-costi/" + analisiId + "/varianti/" + variante.id, {
+        codice: variante.codice,
+        descrizione: variante.descrizione,
+        importo: variante.importo,
+        impattoCosti: variante.impatto_costi ?? variante.impattoCosti ?? variante.importo,
+        impattoGiorni: variante.impatto_giorni ?? variante.impattoGiorni ?? 0,
+        stato,
+        data: variante.data,
+        note: variante.note,
+      });
+      await caricaControlloEnterprise(analisiId);
+    } catch (error) {
+      setErrore(error.message || "Impossibile aggiornare la variante.");
+    }
+  }
+
+  async function eliminaVariante(idVariante) {
+    if (!analisiId || !idVariante) return;
+    try {
+      await api.delete("/analisi-costi/" + analisiId + "/varianti/" + idVariante);
+      await caricaControlloEnterprise(analisiId);
+    } catch (error) {
+      setErrore(error.message || "Impossibile eliminare la variante.");
+    }
+  }
+
+  const controlloKpi = dashboard?.kpi || {
+    budgetBase: voci.reduce((tot, voce) => tot + (numero(voce.controllo?.budgetOperativo) || numero(voce.importo)), 0),
+    variazioniApprovate: 0,
+    budgetAutorizzato: voci.reduce((tot, voce) => tot + (numero(voce.controllo?.budgetOperativo) || numero(voce.importo)), 0),
+    impegnato: 0,
+    costoReale: 0,
+    etc: 0,
+    eac: 0,
+    vac: 0,
+    marginePrevisto: 0,
+    avanzamentoPct: 0,
+    plannedPct: 0,
+    earnedValue: 0,
+    plannedValue: 0,
+    cpi: 0,
+    spi: 0,
+    oreReali: 0,
+    costoManodoperaRealeStimato: 0,
+  };
+
   const tabs = [
     ["voci", "Voci di costo"],
     ["dettaglio", "Analisi dettagliata"],
+    ["controllo", "Controllo commessa"],
+    ["portfolio", "Portfolio"],
+    ["cashflow", "Cash flow"],
+    ["fabbisogni", "Fabbisogni"],
+    ["varianti", "Varianti"],
     ["criticita", "Criticità (" + riepilogo.criticita + ")"],
     ["suggerimenti", "Suggerimenti"],
     ["prezzi", "Elenco prezzi"],
@@ -879,7 +1161,18 @@ function AnalisiCosti() {
           </label>
           <label>
             Cantiere
-            <select value={cantiereId} onChange={(e) => setCantiereId(e.target.value)} style={{ width: "100%" }}>
+            <select
+              value={cantiereId}
+              onChange={(e) => {
+                const id = e.target.value;
+                setCantiereId(id);
+                const cantiere = cantieri.find((item) => String(item.id) === String(id));
+                if (cantiere?.indirizzo) setDestinazione(cantiere.indirizzo);
+                if (cantiere?.clienteId) setClienteId(cantiere.clienteId);
+                if (cantiere?.preventivoId) setPreventivoId(cantiere.preventivoId);
+              }}
+              style={{ width: "100%" }}
+            >
               <option value="">Seleziona cantiere</option>
               {cantieri.map((item) => (
                 <option key={item.id} value={item.id}>{item.nome || item.cantiere || item.id}</option>
@@ -951,7 +1244,10 @@ function AnalisiCosti() {
             <button
               type="button"
               key={value}
-              onClick={() => setTab(value)}
+              onClick={() => {
+                setTab(value);
+                if (value === "portfolio") caricaPortfolio();
+              }}
               style={{
                 background: tab === value ? "#0b63ce" : "#fff",
                 color: tab === value ? "#fff" : "#102a43",
@@ -1169,6 +1465,389 @@ function AnalisiCosti() {
                     <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{euro.format(item.oreTotali * numero(costoManodoperaOra))}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {tab === "controllo" && (
+          <div style={{ padding: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
+              <div>
+                <h2 style={{ margin: 0 }}>Controllo economico commessa</h2>
+                <p style={{ margin: "4px 0 0", color: "#64748b" }}>
+                  Budget operativo, impegni, costi reali, costo a finire e forecast finale.
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button type="button" onClick={impostaBaseline} disabled={!voci.length} style={{ background: "#fff", color: "#0b63ce" }}>
+                  Imposta baseline
+                </button>
+                <button type="button" onClick={salvaAnalisi} disabled={!voci.length || salvando}>
+                  Salva e aggiorna controllo
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(180px,1fr))", gap: "10px", marginBottom: "14px" }}>
+              {[
+                ["Baseline", controlloKpi.baselineBudget, "#64748b"],
+                ["Budget base", controlloKpi.budgetBase, "#102a43"],
+                ["Varianti approvate", controlloKpi.variazioniApprovate, "#7c3aed"],
+                ["Budget autorizzato", controlloKpi.budgetAutorizzato, "#0b63ce"],
+                ["Impegnato", controlloKpi.impegnato, "#b45309"],
+                ["Costo reale", controlloKpi.costoReale, "#be123c"],
+                ["ETC - Costo a finire", controlloKpi.etc, "#475569"],
+                ["EAC - Costo finale previsto", controlloKpi.eac, numero(controlloKpi.vac) < 0 ? "#be123c" : "#166534"],
+                ["Margine finale previsto", controlloKpi.marginePrevisto, numero(controlloKpi.marginePrevisto) < 0 ? "#be123c" : "#166534"],
+              ].map(([label, value, color]) => (
+                <div key={label} style={cardStyle()}>
+                  <div style={{ color: "#64748b", fontSize: "12px", fontWeight: 700 }}>{label}</div>
+                  <div style={{ fontSize: "21px", fontWeight: 900, marginTop: "7px", color }}>{euro.format(value || 0)}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: "10px", marginBottom: "16px" }}>
+              <div style={cardStyle()}><strong>Avanzamento fisico</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(controlloKpi.avanzamentoPct).toFixed(1)}%</div></div>
+              <div style={cardStyle()}><strong>Avanzamento pianificato</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(controlloKpi.plannedPct).toFixed(1)}%</div></div>
+              <div style={cardStyle()}><strong>EV</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{euro.format(controlloKpi.earnedValue || 0)}</div></div>
+              <div style={cardStyle()}><strong>PV</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{euro.format(controlloKpi.plannedValue || 0)}</div></div>
+              <div style={{ ...cardStyle(), background: numero(controlloKpi.cpi) >= 1 ? "#f0fdf4" : "#fff7ed" }}><strong>CPI</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(controlloKpi.cpi).toFixed(2)}</div><small>Efficienza costi</small></div>
+              <div style={{ ...cardStyle(), background: numero(controlloKpi.spi) >= 1 ? "#f0fdf4" : "#fff7ed" }}><strong>SPI</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(controlloKpi.spi).toFixed(2)}</div><small>Efficienza tempi</small></div>
+            </div>
+
+            {dashboard?.alerts?.length > 0 && (
+              <div style={{ marginBottom: "16px" }}>
+                <h3>Alert automatici</h3>
+                <div style={{ display: "grid", gap: "8px" }}>
+                  {dashboard.alerts.map((alert, index) => (
+                    <div
+                      key={alert.tipo + "-" + index}
+                      style={{
+                        display: "flex",
+                        gap: "10px",
+                        alignItems: "center",
+                        padding: "10px 12px",
+                        borderRadius: "8px",
+                        border: "1px solid " + (alert.livello === "Alta" ? "#fecaca" : "#fde68a"),
+                        background: alert.livello === "Alta" ? "#fff1f2" : "#fffbeb",
+                      }}
+                    >
+                      <AlertTriangle size={18} color={alert.livello === "Alta" ? "#be123c" : "#b45309"} />
+                      <strong>{alert.tipo}</strong>
+                      <span>{alert.messaggio}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <h3>WBS / Budget operativo</h3>
+            <div style={{ overflowX: "auto", border: "1px solid #dbe3ee", borderRadius: "8px", marginBottom: "18px" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "1050px" }}>
+                <thead>
+                  <tr style={{ background: "#edf2f7" }}>
+                    <th style={{ padding: "8px" }}>WBS</th>
+                    <th style={{ padding: "8px" }}>Lavorazione</th>
+                    <th style={{ padding: "8px" }}>Budget analisi</th>
+                    <th style={{ padding: "8px" }}>Budget operativo</th>
+                    <th style={{ padding: "8px" }}>Avanzamento %</th>
+                    <th style={{ padding: "8px" }}>Q.tà prevista</th>
+                    <th style={{ padding: "8px" }}>Q.tà eseguita</th>
+                    <th style={{ padding: "8px" }}>Inizio previsto</th>
+                    <th style={{ padding: "8px" }}>Fine prevista</th>
+                    <th style={{ padding: "8px" }}>Ore previste</th>
+                    <th style={{ padding: "8px" }}>Ore reali</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {voci.map((voce, index) => (
+                    <tr key={String(voce.id || index)} style={{ borderBottom: "1px solid #eef2f6" }}>
+                      <td style={{ padding: "7px" }}>
+                        <input
+                          value={voce.controllo?.wbsCodice || "WBS-" + String(index + 1).padStart(3, "0")}
+                          onChange={(e) => aggiornaControlloVoce(index, "wbsCodice", e.target.value)}
+                          style={{ width: "95px" }}
+                        />
+                      </td>
+                      <td style={{ padding: "7px", minWidth: "260px" }}>{voce.descrizione}</td>
+                      <td style={{ padding: "7px", textAlign: "right" }}>{euro.format(voce.importo || 0)}</td>
+                      <td style={{ padding: "7px" }}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={voce.controllo?.budgetOperativo ?? voce.importo ?? 0}
+                          onChange={(e) => aggiornaControlloVoce(index, "budgetOperativo", e.target.value)}
+                          style={{ width: "110px" }}
+                        />
+                      </td>
+                      <td style={{ padding: "7px" }}>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={voce.controllo?.avanzamentoPct ?? 0}
+                          onChange={(e) => aggiornaControlloVoce(index, "avanzamentoPct", e.target.value)}
+                          style={{ width: "80px" }}
+                        />
+                      </td>
+                      <td style={{ padding: "7px", textAlign: "right" }}>{numero(voce.quantita).toLocaleString("it-IT")}</td>
+                      <td style={{ padding: "7px" }}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={voce.controllo?.quantitaEseguita ?? 0}
+                          onChange={(e) => aggiornaControlloVoce(index, "quantitaEseguita", e.target.value)}
+                          style={{ width: "90px" }}
+                        />
+                      </td>
+                      <td style={{ padding: "7px" }}>
+                        <input
+                          type="date"
+                          value={voce.controllo?.dataInizioPrevista || ""}
+                          onChange={(e) => aggiornaControlloVoce(index, "dataInizioPrevista", e.target.value)}
+                          style={{ width: "135px" }}
+                        />
+                      </td>
+                      <td style={{ padding: "7px" }}>
+                        <input
+                          type="date"
+                          value={voce.controllo?.dataFinePrevista || ""}
+                          onChange={(e) => aggiornaControlloVoce(index, "dataFinePrevista", e.target.value)}
+                          style={{ width: "135px" }}
+                        />
+                      </td>
+                      <td style={{ padding: "7px", textAlign: "right" }}>{numero(voce.cronoprogramma?.oreTotali).toFixed(1)}</td>
+                      <td style={{ padding: "7px" }}>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={voce.controllo?.oreReali ?? 0}
+                          onChange={(e) => aggiornaControlloVoce(index, "oreReali", e.target.value)}
+                          style={{ width: "85px" }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1.2fr .8fr", gap: "16px" }}>
+              <div>
+                <h3>Impegni / Ordini / Subappalti</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "110px 130px 1fr 140px 130px auto", gap: "7px", marginBottom: "10px" }}>
+                  <input placeholder="WBS" value={nuovoImpegno.wbsCodice} onChange={(e) => setNuovoImpegno({ ...nuovoImpegno, wbsCodice: e.target.value })} />
+                  <select value={nuovoImpegno.categoria} onChange={(e) => setNuovoImpegno({ ...nuovoImpegno, categoria: e.target.value })}>
+                    <option>Subappalto</option>
+                    <option>Noleggio</option>
+                    <option>Materiali</option>
+                    <option>Servizi</option>
+                    <option>Altro</option>
+                  </select>
+                  <input placeholder="Descrizione impegno" value={nuovoImpegno.descrizione} onChange={(e) => setNuovoImpegno({ ...nuovoImpegno, descrizione: e.target.value })} />
+                  <input placeholder="Fornitore" value={nuovoImpegno.fornitore} onChange={(e) => setNuovoImpegno({ ...nuovoImpegno, fornitore: e.target.value })} />
+                  <input type="number" step="0.01" placeholder="Importo €" value={nuovoImpegno.importo} onChange={(e) => setNuovoImpegno({ ...nuovoImpegno, importo: e.target.value })} />
+                  <button type="button" onClick={aggiungiImpegno}>Aggiungi</button>
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead><tr style={{ background: "#edf2f7" }}><th>Fonte</th><th>WBS</th><th>Categoria</th><th>Fornitore</th><th>Descrizione</th><th>Importo</th><th>Stato</th><th></th></tr></thead>
+                  <tbody>
+                    {(dashboard?.ordini || []).map((item) => (
+                      <tr key={"ordine-" + item.id} style={{ borderBottom: "1px solid #eef2f6" }}>
+                        <td style={{ padding: "7px" }}>Ordine</td><td style={{ padding: "7px" }}>-</td><td style={{ padding: "7px" }}>Materiali</td><td style={{ padding: "7px" }}>{item.fornitore}</td><td style={{ padding: "7px" }}>{item.materiale}</td><td style={{ padding: "7px", textAlign: "right" }}>{euro.format(item.importo || 0)}</td><td style={{ padding: "7px" }}>{item.stato}</td><td></td>
+                      </tr>
+                    ))}
+                    {impegni.map((item) => (
+                      <tr key={"impegno-" + item.id} style={{ borderBottom: "1px solid #eef2f6" }}>
+                        <td style={{ padding: "7px" }}>{item.fonte || "Manuale"}</td>
+                        <td style={{ padding: "7px" }}>{item.wbs_codice || item.wbsCodice || "-"}</td>
+                        <td style={{ padding: "7px" }}>{item.categoria}</td>
+                        <td style={{ padding: "7px" }}>{item.fornitore || "-"}</td>
+                        <td style={{ padding: "7px" }}>{item.descrizione}</td>
+                        <td style={{ padding: "7px", textAlign: "right" }}>{euro.format(item.importo || 0)}</td>
+                        <td style={{ padding: "7px" }}>{item.stato}</td>
+                        <td style={{ padding: "7px" }}><button type="button" onClick={() => eliminaImpegno(item.id)} style={{ background: "#fff", color: "#b91c1c" }}>×</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div>
+                <h3>Produttività manodopera</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "10px", marginBottom: "10px" }}>
+                  <div style={cardStyle()}><strong>Ore reali utilizzate</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(dashboard?.produttivita?.oreReali).toFixed(1)}</div></div>
+                  <div style={cardStyle()}><strong>Costo ore stimato</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{euro.format(dashboard?.produttivita?.costoManodoperaRealeStimato || 0)}</div></div>
+                  <div style={cardStyle()}><strong>Ore da rapportini</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(dashboard?.produttivita?.oreRealiRapportini).toFixed(1)}</div></div>
+                  <div style={cardStyle()}><strong>Ore imputate WBS</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(dashboard?.produttivita?.oreRealiWbs).toFixed(1)}</div></div>
+                </div>
+                <div style={{ maxHeight: "270px", overflow: "auto", border: "1px solid #dbe3ee", borderRadius: "8px" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                    <thead><tr style={{ background: "#edf2f7" }}><th>WBS</th><th>Lavorazione</th><th>Resa prevista</th><th>Resa reale</th><th>Scostamento</th></tr></thead>
+                    <tbody>
+                      {(dashboard?.produttivita?.righe || []).map((row, index) => (
+                        <tr key={(row.wbsCodice || "") + index} style={{ borderBottom: "1px solid #eef2f6" }}>
+                          <td style={{ padding: "6px" }}>{row.wbsCodice || "-"}</td>
+                          <td style={{ padding: "6px" }}>{row.descrizione}</td>
+                          <td style={{ padding: "6px", textAlign: "right" }}>{numero(row.resaPrevista).toFixed(2)} {row.unita || ""}/h</td>
+                          <td style={{ padding: "6px", textAlign: "right" }}>{numero(row.resaReale).toFixed(2)} {row.unita || ""}/h</td>
+                          <td style={{ padding: "6px", textAlign: "right", fontWeight: 700, color: numero(row.scostamentoResaPct) < 0 ? "#be123c" : "#166534" }}>{numero(row.scostamentoResaPct).toFixed(1)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "portfolio" && (
+          <div style={{ padding: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+              <div>
+                <h2 style={{ margin: 0 }}>Portfolio cantieri</h2>
+                <p style={{ margin: "4px 0 0", color: "#64748b" }}>Visione sintetica di budget, forecast e margini delle analisi salvate.</p>
+              </div>
+              <button type="button" onClick={caricaPortfolio}>Aggiorna portfolio</button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px", marginBottom: "14px" }}>
+              <div style={cardStyle()}><strong>Commesse</strong><div style={{ fontSize: "22px", fontWeight: 900 }}>{portfolio.length}</div></div>
+              <div style={cardStyle()}><strong>Budget autorizzato</strong><div style={{ fontSize: "22px", fontWeight: 900 }}>{euro.format(portfolio.reduce((tot, item) => tot + numero(item.kpi?.budgetAutorizzato), 0))}</div></div>
+              <div style={cardStyle()}><strong>EAC portfolio</strong><div style={{ fontSize: "22px", fontWeight: 900 }}>{euro.format(portfolio.reduce((tot, item) => tot + numero(item.kpi?.eac), 0))}</div></div>
+              <div style={cardStyle()}><strong>Margine previsto</strong><div style={{ fontSize: "22px", fontWeight: 900 }}>{euro.format(portfolio.reduce((tot, item) => tot + numero(item.kpi?.marginePrevisto), 0))}</div></div>
+            </div>
+
+            <div style={{ overflowX: "auto", border: "1px solid #dbe3ee", borderRadius: "8px" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "1000px" }}>
+                <thead><tr style={{ background: "#edf2f7" }}><th>Commessa</th><th>Cliente</th><th>Budget</th><th>Impegnato</th><th>Costo reale</th><th>EAC</th><th>VAC</th><th>CPI</th><th>SPI</th><th>Margine previsto</th><th>Stato</th></tr></thead>
+                <tbody>
+                  {portfolio.map((item) => (
+                    <tr key={item.id} style={{ borderBottom: "1px solid #eef2f6" }}>
+                      <td style={{ padding: "8px", fontWeight: 700 }}>{item.titolo}</td>
+                      <td style={{ padding: "8px" }}>{item.clienteNome || "-"}</td>
+                      <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(item.kpi?.budgetAutorizzato || 0)}</td>
+                      <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(item.kpi?.impegnato || 0)}</td>
+                      <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(item.kpi?.costoReale || 0)}</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{euro.format(item.kpi?.eac || 0)}</td>
+                      <td style={{ padding: "8px", textAlign: "right", color: numero(item.kpi?.vac) < 0 ? "#be123c" : "#166534" }}>{euro.format(item.kpi?.vac || 0)}</td>
+                      <td style={{ padding: "8px", textAlign: "center", color: numero(item.kpi?.cpi) < 1 ? "#b45309" : "#166534" }}>{numero(item.kpi?.cpi).toFixed(2)}</td>
+                      <td style={{ padding: "8px", textAlign: "center", color: numero(item.kpi?.spi) < 1 ? "#b45309" : "#166534" }}>{numero(item.kpi?.spi).toFixed(2)}</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontWeight: 700, color: numero(item.kpi?.marginePrevisto) < 0 ? "#be123c" : "#166534" }}>{euro.format(item.kpi?.marginePrevisto || 0)}</td>
+                      <td style={{ padding: "8px" }}>{item.stato}</td>
+                    </tr>
+                  ))}
+                  {!portfolio.length && <tr><td colSpan="11" style={{ padding: "24px", textAlign: "center", color: "#64748b" }}>Nessuna analisi salvata nel portfolio.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {tab === "cashflow" && (
+          <div style={{ padding: "16px" }}>
+            <h2>Cash flow di commessa</h2>
+            <p style={{ color: "#64748b" }}>Confronto mensile tra costo previsto, consuntivato e impegni assunti.</p>
+            <div style={{ overflowX: "auto", border: "1px solid #dbe3ee", borderRadius: "8px" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr style={{ background: "#edf2f7" }}><th>Mese</th><th>Previsto</th><th>Consuntivo</th><th>Impegnato</th><th>Scostamento</th><th>Indicatore</th></tr></thead>
+                <tbody>
+                  {(dashboard?.cashflow || []).map((row) => {
+                    const max = Math.max(numero(row.previsto), numero(row.consuntivo), numero(row.impegnato), 1);
+                    return (
+                      <tr key={row.mese} style={{ borderBottom: "1px solid #eef2f6" }}>
+                        <td style={{ padding: "8px", fontWeight: 700 }}>{row.mese}</td>
+                        <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(row.previsto || 0)}</td>
+                        <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(row.consuntivo || 0)}</td>
+                        <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(row.impegnato || 0)}</td>
+                        <td style={{ padding: "8px", textAlign: "right", color: numero(row.scostamento) > 0 ? "#be123c" : "#166534", fontWeight: 700 }}>{euro.format(row.scostamento || 0)}</td>
+                        <td style={{ padding: "8px", minWidth: "220px" }}>
+                          <div style={{ height: "7px", background: "#e2e8f0", borderRadius: "99px", overflow: "hidden", marginBottom: "3px" }}><div style={{ height: "100%", width: Math.min(100, numero(row.previsto) / max * 100) + "%", background: "#0b63ce" }} /></div>
+                          <div style={{ height: "7px", background: "#e2e8f0", borderRadius: "99px", overflow: "hidden", marginBottom: "3px" }}><div style={{ height: "100%", width: Math.min(100, numero(row.consuntivo) / max * 100) + "%", background: "#16a34a" }} /></div>
+                          <div style={{ height: "7px", background: "#e2e8f0", borderRadius: "99px", overflow: "hidden" }}><div style={{ height: "100%", width: Math.min(100, numero(row.impegnato) / max * 100) + "%", background: "#f59e0b" }} /></div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {!dashboard?.cashflow?.length && <tr><td colSpan="6" style={{ padding: "24px", textAlign: "center", color: "#64748b" }}>Salva l'analisi e collega un cantiere con date e movimenti contabili per generare il cash flow.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {tab === "fabbisogni" && (
+          <div style={{ padding: "16px" }}>
+            <h2>Fabbisogno materiali</h2>
+            <p style={{ color: "#64748b" }}>Materiali richiesti dall'analisi confrontati con le giacenze di magazzino.</p>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: "#edf2f7" }}><th>Codice</th><th>Materiale</th><th>U.M.</th><th>Richiesto</th><th>Disponibile</th><th>Da ordinare</th><th>Valore da ordinare</th><th>Stato</th></tr></thead>
+              <tbody>
+                {(dashboard?.fabbisogni || []).map((item, index) => (
+                  <tr key={(item.codice || item.descrizione) + index} style={{ borderBottom: "1px solid #eef2f6" }}>
+                    <td style={{ padding: "8px" }}>{item.codice || "-"}</td>
+                    <td style={{ padding: "8px" }}>{item.descrizione}</td>
+                    <td style={{ padding: "8px", textAlign: "center" }}>{item.unita || "-"}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{numero(item.richiesto).toLocaleString("it-IT")}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{numero(item.disponibile).toLocaleString("it-IT")}</td>
+                    <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{numero(item.daOrdinare).toLocaleString("it-IT")}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(item.valoreDaOrdinare || 0)}</td>
+                    <td style={{ padding: "8px" }}>
+                      <span style={{ padding: "4px 8px", borderRadius: "6px", background: numero(item.daOrdinare) > 0 ? "#fef3c7" : "#dcfce7", color: numero(item.daOrdinare) > 0 ? "#92400e" : "#166534", fontWeight: 700 }}>
+                        {numero(item.daOrdinare) > 0 ? "Da ordinare" : "Coperto"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {!dashboard?.fabbisogni?.length && <tr><td colSpan="8" style={{ padding: "24px", textAlign: "center", color: "#64748b" }}>Esegui l'analisi dettagliata per generare il fabbisogno materiali.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {tab === "varianti" && (
+          <div style={{ padding: "16px" }}>
+            <h2>Varianti / Change order</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 130px 130px 110px 130px auto", gap: "8px", marginBottom: "14px" }}>
+              <input placeholder="Codice" value={nuovaVariante.codice} onChange={(e) => setNuovaVariante({ ...nuovaVariante, codice: e.target.value })} />
+              <input placeholder="Descrizione variante" value={nuovaVariante.descrizione} onChange={(e) => setNuovaVariante({ ...nuovaVariante, descrizione: e.target.value })} />
+              <input type="number" step="0.01" placeholder="Valore €" value={nuovaVariante.importo} onChange={(e) => setNuovaVariante({ ...nuovaVariante, importo: e.target.value })} />
+              <input type="number" step="0.01" placeholder="Costo €" value={nuovaVariante.impattoCosti} onChange={(e) => setNuovaVariante({ ...nuovaVariante, impattoCosti: e.target.value })} />
+              <input type="number" step="1" placeholder="Giorni" value={nuovaVariante.impattoGiorni} onChange={(e) => setNuovaVariante({ ...nuovaVariante, impattoGiorni: e.target.value })} />
+              <select value={nuovaVariante.stato} onChange={(e) => setNuovaVariante({ ...nuovaVariante, stato: e.target.value })}>
+                <option>Proposta</option>
+                <option>Approvata</option>
+                <option>Rifiutata</option>
+              </select>
+              <button type="button" onClick={aggiungiVariante}>Aggiungi</button>
+            </div>
+
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: "#edf2f7" }}><th>Codice</th><th>Descrizione</th><th>Valore</th><th>Impatto costi</th><th>Giorni</th><th>Stato</th><th>Azioni</th></tr></thead>
+              <tbody>
+                {varianti.map((item) => (
+                  <tr key={item.id} style={{ borderBottom: "1px solid #eef2f6" }}>
+                    <td style={{ padding: "8px" }}>{item.codice || "-"}</td>
+                    <td style={{ padding: "8px" }}>{item.descrizione}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(item.importo || 0)}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(item.impatto_costi ?? item.impattoCosti ?? item.importo ?? 0)}</td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>{numero(item.impatto_giorni ?? item.impattoGiorni).toFixed(0)}</td>
+                    <td style={{ padding: "8px" }}>
+                      <span style={{ padding: "4px 8px", borderRadius: "6px", background: normalizeStatus(item.stato) === "approvata" ? "#dcfce7" : normalizeStatus(item.stato) === "rifiutata" ? "#fee2e2" : "#fef3c7", color: "#334155", fontWeight: 700 }}>
+                        {item.stato}
+                      </span>
+                    </td>
+                    <td style={{ padding: "8px", whiteSpace: "nowrap" }}>
+                      {normalizeStatus(item.stato) !== "approvata" && <button type="button" onClick={() => aggiornaStatoVariante(item, "Approvata")} style={{ background: "#16a34a", padding: "6px 8px" }}>Approva</button>}{" "}
+                      <button type="button" onClick={() => eliminaVariante(item.id)} style={{ background: "#fff", color: "#b91c1c", padding: "6px 8px" }}>×</button>
+                    </td>
+                  </tr>
+                ))}
+                {!varianti.length && <tr><td colSpan="7" style={{ padding: "24px", textAlign: "center", color: "#64748b" }}>Nessuna variante registrata.</td></tr>}
               </tbody>
             </table>
           </div>
