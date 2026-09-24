@@ -188,3 +188,73 @@ CREATE TABLE IF NOT EXISTS ordini_materiali (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+
+CREATE TABLE IF NOT EXISTS ddt_fornitori (
+  id SERIAL PRIMARY KEY,
+  ragione_sociale TEXT NOT NULL,
+  partita_iva TEXT,
+  indirizzo TEXT,
+  email TEXT,
+  telefono TEXT,
+  categoria TEXT NOT NULL DEFAULT 'Materiali',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ddt_fornitori_partita_iva_uidx
+  ON ddt_fornitori (partita_iva)
+  WHERE BTRIM(COALESCE(partita_iva, '')) <> '';
+
+CREATE TABLE IF NOT EXISTS ddt_articoli (
+  id SERIAL PRIMARY KEY,
+  fornitore_id INTEGER NOT NULL REFERENCES ddt_fornitori(id) ON DELETE CASCADE,
+  codice_articolo TEXT,
+  descrizione TEXT NOT NULL DEFAULT '',
+  unita_misura TEXT NOT NULL DEFAULT '',
+  ultimo_prezzo NUMERIC(14, 4) NOT NULL DEFAULT 0,
+  prezzo_aggiornato_al TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ddt_articoli_fornitore_codice_uidx
+  ON ddt_articoli (fornitore_id, LOWER(BTRIM(codice_articolo)))
+  WHERE BTRIM(COALESCE(codice_articolo, '')) <> '';
+
+CREATE TABLE IF NOT EXISTS ddt_materiali (
+  id SERIAL PRIMARY KEY,
+  numero_ddt TEXT NOT NULL,
+  data_ddt DATE NOT NULL DEFAULT CURRENT_DATE,
+  fornitore_id INTEGER REFERENCES ddt_fornitori(id) ON DELETE SET NULL,
+  fornitore_nome TEXT NOT NULL DEFAULT '',
+  partita_iva TEXT,
+  numero_chiamata TEXT,
+  codice_progetto TEXT,
+  id_cliente TEXT,
+  cliente TEXT,
+  preventivo_id TEXT,
+  preventivo_numero TEXT,
+  consuntivo_id TEXT,
+  magazzino TEXT,
+  allegato_nome TEXT,
+  allegato_mime_type TEXT,
+  allegato_data_url TEXT,
+  stato TEXT NOT NULL DEFAULT 'REGISTRATO',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ddt_materiali_righe (
+  id SERIAL PRIMARY KEY,
+  ddt_id INTEGER NOT NULL REFERENCES ddt_materiali(id) ON DELETE CASCADE,
+  articolo_id INTEGER REFERENCES ddt_articoli(id) ON DELETE SET NULL,
+  codice_articolo TEXT,
+  descrizione TEXT NOT NULL DEFAULT '',
+  unita_misura TEXT NOT NULL DEFAULT '',
+  quantita NUMERIC(14, 4) NOT NULL DEFAULT 0,
+  prezzo_unitario NUMERIC(14, 4) NOT NULL DEFAULT 0,
+  totale NUMERIC(14, 4) NOT NULL DEFAULT 0,
+  prezzo_da_completare BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
