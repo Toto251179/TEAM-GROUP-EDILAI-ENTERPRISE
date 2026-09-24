@@ -1564,14 +1564,72 @@ function AnalisiCosti() {
 
               <div>
                 <h3>Produttività manodopera</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "10px" }}>
-                  <div style={cardStyle()}><strong>Ore reali rapportini</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(dashboard?.produttivita?.oreReali).toFixed(1)}</div></div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "10px", marginBottom: "10px" }}>
+                  <div style={cardStyle()}><strong>Ore reali utilizzate</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(dashboard?.produttivita?.oreReali).toFixed(1)}</div></div>
                   <div style={cardStyle()}><strong>Costo ore stimato</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{euro.format(dashboard?.produttivita?.costoManodoperaRealeStimato || 0)}</div></div>
-                  <div style={cardStyle()}><strong>Quantità pianificata</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(dashboard?.produttivita?.quantitaPianificata).toFixed(1)}</div></div>
-                  <div style={cardStyle()}><strong>Quantità eseguita</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(dashboard?.produttivita?.quantitaEseguita).toFixed(1)}</div></div>
-                  <div style={{ ...cardStyle(), gridColumn: "span 2" }}><strong>Ore per unità prodotta</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(dashboard?.produttivita?.orePerUnita).toFixed(2)}</div></div>
+                  <div style={cardStyle()}><strong>Ore da rapportini</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(dashboard?.produttivita?.oreRealiRapportini).toFixed(1)}</div></div>
+                  <div style={cardStyle()}><strong>Ore imputate WBS</strong><div style={{ fontSize: "20px", fontWeight: 800 }}>{numero(dashboard?.produttivita?.oreRealiWbs).toFixed(1)}</div></div>
+                </div>
+                <div style={{ maxHeight: "270px", overflow: "auto", border: "1px solid #dbe3ee", borderRadius: "8px" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                    <thead><tr style={{ background: "#edf2f7" }}><th>WBS</th><th>Lavorazione</th><th>Resa prevista</th><th>Resa reale</th><th>Scostamento</th></tr></thead>
+                    <tbody>
+                      {(dashboard?.produttivita?.righe || []).map((row, index) => (
+                        <tr key={(row.wbsCodice || "") + index} style={{ borderBottom: "1px solid #eef2f6" }}>
+                          <td style={{ padding: "6px" }}>{row.wbsCodice || "-"}</td>
+                          <td style={{ padding: "6px" }}>{row.descrizione}</td>
+                          <td style={{ padding: "6px", textAlign: "right" }}>{numero(row.resaPrevista).toFixed(2)} {row.unita || ""}/h</td>
+                          <td style={{ padding: "6px", textAlign: "right" }}>{numero(row.resaReale).toFixed(2)} {row.unita || ""}/h</td>
+                          <td style={{ padding: "6px", textAlign: "right", fontWeight: 700, color: numero(row.scostamentoResaPct) < 0 ? "#be123c" : "#166534" }}>{numero(row.scostamentoResaPct).toFixed(1)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "portfolio" && (
+          <div style={{ padding: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+              <div>
+                <h2 style={{ margin: 0 }}>Portfolio cantieri</h2>
+                <p style={{ margin: "4px 0 0", color: "#64748b" }}>Visione sintetica di budget, forecast e margini delle analisi salvate.</p>
+              </div>
+              <button type="button" onClick={caricaPortfolio}>Aggiorna portfolio</button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px", marginBottom: "14px" }}>
+              <div style={cardStyle()}><strong>Commesse</strong><div style={{ fontSize: "22px", fontWeight: 900 }}>{portfolio.length}</div></div>
+              <div style={cardStyle()}><strong>Budget autorizzato</strong><div style={{ fontSize: "22px", fontWeight: 900 }}>{euro.format(portfolio.reduce((tot, item) => tot + numero(item.kpi?.budgetAutorizzato), 0))}</div></div>
+              <div style={cardStyle()}><strong>EAC portfolio</strong><div style={{ fontSize: "22px", fontWeight: 900 }}>{euro.format(portfolio.reduce((tot, item) => tot + numero(item.kpi?.eac), 0))}</div></div>
+              <div style={cardStyle()}><strong>Margine previsto</strong><div style={{ fontSize: "22px", fontWeight: 900 }}>{euro.format(portfolio.reduce((tot, item) => tot + numero(item.kpi?.marginePrevisto), 0))}</div></div>
+            </div>
+
+            <div style={{ overflowX: "auto", border: "1px solid #dbe3ee", borderRadius: "8px" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "1000px" }}>
+                <thead><tr style={{ background: "#edf2f7" }}><th>Commessa</th><th>Cliente</th><th>Budget</th><th>Impegnato</th><th>Costo reale</th><th>EAC</th><th>VAC</th><th>CPI</th><th>SPI</th><th>Margine previsto</th><th>Stato</th></tr></thead>
+                <tbody>
+                  {portfolio.map((item) => (
+                    <tr key={item.id} style={{ borderBottom: "1px solid #eef2f6" }}>
+                      <td style={{ padding: "8px", fontWeight: 700 }}>{item.titolo}</td>
+                      <td style={{ padding: "8px" }}>{item.clienteNome || "-"}</td>
+                      <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(item.kpi?.budgetAutorizzato || 0)}</td>
+                      <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(item.kpi?.impegnato || 0)}</td>
+                      <td style={{ padding: "8px", textAlign: "right" }}>{euro.format(item.kpi?.costoReale || 0)}</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontWeight: 700 }}>{euro.format(item.kpi?.eac || 0)}</td>
+                      <td style={{ padding: "8px", textAlign: "right", color: numero(item.kpi?.vac) < 0 ? "#be123c" : "#166534" }}>{euro.format(item.kpi?.vac || 0)}</td>
+                      <td style={{ padding: "8px", textAlign: "center", color: numero(item.kpi?.cpi) < 1 ? "#b45309" : "#166534" }}>{numero(item.kpi?.cpi).toFixed(2)}</td>
+                      <td style={{ padding: "8px", textAlign: "center", color: numero(item.kpi?.spi) < 1 ? "#b45309" : "#166534" }}>{numero(item.kpi?.spi).toFixed(2)}</td>
+                      <td style={{ padding: "8px", textAlign: "right", fontWeight: 700, color: numero(item.kpi?.marginePrevisto) < 0 ? "#be123c" : "#166534" }}>{euro.format(item.kpi?.marginePrevisto || 0)}</td>
+                      <td style={{ padding: "8px" }}>{item.stato}</td>
+                    </tr>
+                  ))}
+                  {!portfolio.length && <tr><td colSpan="11" style={{ padding: "24px", textAlign: "center", color: "#64748b" }}>Nessuna analisi salvata nel portfolio.</td></tr>}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
