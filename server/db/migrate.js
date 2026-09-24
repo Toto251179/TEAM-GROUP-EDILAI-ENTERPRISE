@@ -838,6 +838,7 @@ const statements = [
   "CREATE INDEX IF NOT EXISTS analisi_costi_impegni_analisi_idx ON analisi_costi_impegni (analisi_id, data DESC)",
   "CREATE TABLE IF NOT EXISTS analisi_costi_varianti (id SERIAL PRIMARY KEY, analisi_id INTEGER NOT NULL REFERENCES analisi_costi(id) ON DELETE CASCADE, codice TEXT, descrizione TEXT NOT NULL DEFAULT '', importo NUMERIC(14,2) NOT NULL DEFAULT 0, impatto_costi NUMERIC(14,2) NOT NULL DEFAULT 0, impatto_giorni NUMERIC(10,2) NOT NULL DEFAULT 0, stato TEXT NOT NULL DEFAULT 'Proposta', data DATE NOT NULL DEFAULT CURRENT_DATE, note TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
   "CREATE INDEX IF NOT EXISTS analisi_costi_varianti_analisi_idx ON analisi_costi_varianti (analisi_id, data DESC)",
+  "ALTER TABLE analisi_costi ADD COLUMN IF NOT EXISTS baseline JSONB NOT NULL DEFAULT '{}'::jsonb",
   `GRANT USAGE ON SCHEMA public TO ${env.db.user}`,
   `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${env.db.user}`,
   `GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO ${env.db.user}`,
