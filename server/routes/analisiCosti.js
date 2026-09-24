@@ -58,6 +58,8 @@ async function ensureSchema() {
   await query("CREATE TABLE IF NOT EXISTS analisi_costi_voci (id SERIAL PRIMARY KEY, analisi_id INTEGER NOT NULL REFERENCES analisi_costi(id) ON DELETE CASCADE, ordine INTEGER NOT NULL DEFAULT 0, codice TEXT, descrizione TEXT NOT NULL DEFAULT '', unita TEXT, quantita NUMERIC(14,4) NOT NULL DEFAULT 0, prezzo_unitario NUMERIC(14,4) NOT NULL DEFAULT 0, importo NUMERIC(14,2) NOT NULL DEFAULT 0, tipo_costo TEXT NOT NULL DEFAULT 'Da classificare', fonte TEXT, fonte_titolo TEXT, fonte_url TEXT, fonte_data TEXT, stato TEXT NOT NULL DEFAULT 'Da verificare', componenti JSONB NOT NULL DEFAULT '{}'::jsonb, cronoprogramma JSONB NOT NULL DEFAULT '{}'::jsonb, criticita JSONB NOT NULL DEFAULT '[]'::jsonb, note TEXT, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
 
   await query("CREATE INDEX IF NOT EXISTS analisi_costi_voci_analisi_idx ON analisi_costi_voci (analisi_id)");
+  await query("CREATE TABLE IF NOT EXISTS analisi_costi_revisioni (id SERIAL PRIMARY KEY, analisi_id INTEGER NOT NULL REFERENCES analisi_costi(id) ON DELETE CASCADE, revisione INTEGER NOT NULL DEFAULT 0, snapshot JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+  await query("CREATE INDEX IF NOT EXISTS analisi_costi_revisioni_analisi_idx ON analisi_costi_revisioni (analisi_id, revisione DESC)");
   schemaReady = true;
 }
 
