@@ -258,3 +258,57 @@ CREATE TABLE IF NOT EXISTS ddt_materiali_righe (
   prezzo_da_completare BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+
+CREATE TABLE IF NOT EXISTS analisi_costi (
+  id SERIAL PRIMARY KEY,
+  titolo TEXT NOT NULL DEFAULT '',
+  file_name TEXT,
+  file_mime TEXT,
+  file_data_url TEXT,
+  cliente_id INTEGER,
+  cliente_nome TEXT,
+  preventivo_id INTEGER,
+  cantiere_id INTEGER,
+  sede TEXT NOT NULL DEFAULT 'Vicenza (VI)',
+  destinazione TEXT,
+  costo_manodopera_ora NUMERIC(12,2) NOT NULL DEFAULT 28,
+  spese_generali_pct NUMERIC(6,2) NOT NULL DEFAULT 20,
+  margine_pct NUMERIC(6,2) NOT NULL DEFAULT 10,
+  km_andata_ritorno NUMERIC(12,2) NOT NULL DEFAULT 0,
+  numero_viaggi NUMERIC(12,2) NOT NULL DEFAULT 0,
+  costo_km NUMERIC(12,4) NOT NULL DEFAULT 0,
+  pedaggi NUMERIC(12,2) NOT NULL DEFAULT 0,
+  pasti_pernotti NUMERIC(12,2) NOT NULL DEFAULT 0,
+  stato TEXT NOT NULL DEFAULT 'BOZZA',
+  revisione INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS analisi_costi_voci (
+  id SERIAL PRIMARY KEY,
+  analisi_id INTEGER NOT NULL REFERENCES analisi_costi(id) ON DELETE CASCADE,
+  ordine INTEGER NOT NULL DEFAULT 0,
+  codice TEXT,
+  descrizione TEXT NOT NULL DEFAULT '',
+  unita TEXT,
+  quantita NUMERIC(14,4) NOT NULL DEFAULT 0,
+  prezzo_unitario NUMERIC(14,4) NOT NULL DEFAULT 0,
+  importo NUMERIC(14,2) NOT NULL DEFAULT 0,
+  tipo_costo TEXT NOT NULL DEFAULT 'Da classificare',
+  fonte TEXT,
+  fonte_titolo TEXT,
+  fonte_url TEXT,
+  fonte_data TEXT,
+  stato TEXT NOT NULL DEFAULT 'Da verificare',
+  componenti JSONB NOT NULL DEFAULT '{}'::jsonb,
+  cronoprogramma JSONB NOT NULL DEFAULT '{}'::jsonb,
+  criticita JSONB NOT NULL DEFAULT '[]'::jsonb,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS analisi_costi_voci_analisi_idx
+  ON analisi_costi_voci (analisi_id);
