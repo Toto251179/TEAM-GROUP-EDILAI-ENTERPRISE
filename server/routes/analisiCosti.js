@@ -697,12 +697,21 @@ async function getEnterpriseDashboard(item) {
   const datedRows = item.voci.filter(
     (voce) => voce.controllo?.dataInizioPrevista && voce.controllo?.dataFinePrevista,
   );
-  const dateCandidates = datedRows.flatMap((voce) => [
-    voce.controllo.dataInizioPrevista,
-    voce.controllo.dataFinePrevista,
-  ]);
-  const globalStart = cantiere?.data_inizio || dateCandidates.sort()[0] || new Date().toISOString().slice(0, 10);
-  const globalEnd = cantiere?.data_fine_prevista || dateCandidates.sort().slice(-1)[0] || globalStart;
+  const dateCandidates = [
+    cantiere?.data_inizio,
+    cantiere?.data_fine_prevista,
+    ...datedRows.flatMap((voce) => [
+      voce.controllo.dataInizioPrevista,
+      voce.controllo.dataFinePrevista,
+    ]),
+    ...movimenti.map((row) => row.data),
+    ...ordini.map((row) => row.data),
+    ...manualCommitments.rows.map((row) => row.data),
+  ].filter(Boolean).map((value) => new Date(value)).filter((date) => !Number.isNaN(date.getTime()));
+
+  const sortedDates = dateCandidates.sort((a, b) => a.getTime() - b.getTime());
+  const globalStart = sortedDates[0]?.toISOString().slice(0, 10) || new Date().toISOString().slice(0, 10);
+  const globalEnd = sortedDates[sortedDates.length - 1]?.toISOString().slice(0, 10) || globalStart;
   const months = monthsBetween(globalStart, globalEnd);
   const undatedBudget = item.voci
     .filter((voce) => !(voce.controllo?.dataInizioPrevista && voce.controllo?.dataFinePrevista))
