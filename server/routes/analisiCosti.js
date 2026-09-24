@@ -203,8 +203,9 @@ async function callOpenAIForDocument({ fileName, mimeType, dataUrl, textContent 
   } else if (clean(mimeType).startsWith("image/")) {
     content.push({ type: "input_image", image_url: dataUrl, detail: "high" });
   } else {
-    const encoded = String(dataUrl || "").split(",").pop() || "";
-    content.push({ type: "input_file", filename: fileName || "documento.pdf", file_data: encoded });
+    const fileItem = { type: "input_file", filename: fileName || "documento.pdf", file_data: dataUrl };
+    if (/\.pdf$/i.test(fileName || "") || clean(mimeType).includes("pdf")) fileItem.detail = "high";
+    content.push(fileItem);
   }
 
   const response = await fetch("https://api.openai.com/v1/responses", {
