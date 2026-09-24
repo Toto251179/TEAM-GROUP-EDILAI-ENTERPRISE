@@ -558,9 +558,13 @@ function weightedProgress(voci, fallbackPct = 0) {
   }, 0);
   if (!totalBudget) return Math.max(0, Math.min(100, toNumber(fallbackPct)));
 
+  const hasLineProgress = rows.some((voce) => toNumber(voce.controllo?.avanzamentoPct) > 0);
+  const fallback = Math.max(0, Math.min(100, toNumber(fallbackPct)));
   const earned = rows.reduce((tot, voce) => {
     const budget = toNumber(voce.controllo?.budgetOperativo) || toNumber(voce.importo);
-    const progress = Math.max(0, Math.min(100, toNumber(voce.controllo?.avanzamentoPct ?? fallbackPct)));
+    const progress = hasLineProgress
+      ? Math.max(0, Math.min(100, toNumber(voce.controllo?.avanzamentoPct)))
+      : fallback;
     return tot + budget * progress / 100;
   }, 0);
   return Math.max(0, Math.min(100, earned / totalBudget * 100));
