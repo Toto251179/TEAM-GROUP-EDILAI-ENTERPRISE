@@ -96,6 +96,12 @@ function normalizzaRigaFoglio(row, index) {
     componenti: {},
     cronoprogramma: {},
     criticita: numero(prezzo) > 0 ? [] : ["Prezzo unitario mancante"],
+    controllo: {
+      wbsCodice: "WBS-" + String(index + 1).padStart(3, "0"),
+      budgetOperativo: numero(importo) || numero(quantita) * numero(prezzo),
+      avanzamentoPct: 0,
+      quantitaEseguita: 0,
+    },
     note: "",
   };
 }
@@ -139,6 +145,25 @@ function AnalisiCosti() {
   const [preventivoId, setPreventivoId] = useState(null);
   const [revisioni, setRevisioni] = useState([]);
   const [confronto, setConfronto] = useState(null);
+  const [dashboard, setDashboard] = useState(null);
+  const [impegni, setImpegni] = useState([]);
+  const [varianti, setVarianti] = useState([]);
+  const [nuovoImpegno, setNuovoImpegno] = useState({
+    wbsCodice: "",
+    categoria: "Subappalto",
+    fornitore: "",
+    descrizione: "",
+    importo: "",
+    stato: "Impegnato",
+  });
+  const [nuovaVariante, setNuovaVariante] = useState({
+    codice: "",
+    descrizione: "",
+    importo: "",
+    impattoCosti: "",
+    impattoGiorni: "",
+    stato: "Proposta",
+  });
   const [storico, setStorico] = useState([]);
   const [storicoId, setStoricoId] = useState("");
   const [tab, setTab] = useState("voci");
@@ -277,6 +302,19 @@ function AnalisiCosti() {
             : Array.from(new Set([...(next.criticita || []), "Prezzo unitario mancante"]));
         }
         return next;
+      }),
+    );
+  }
+
+  function aggiornaControlloVoce(index, campo, valore) {
+    setVoci((correnti) =>
+      correnti.map((voce, i) => {
+        if (i !== index) return voce;
+        const controllo = {
+          ...(voce.controllo || {}),
+          [campo]: valore,
+        };
+        return { ...voce, controllo };
       }),
     );
   }
@@ -444,6 +482,26 @@ function AnalisiCosti() {
     };
   }
 
+  async function caricaControlloEnterprise(id) {
+    if (!id) {
+      setDashboard(null);
+      setImpegni([]);
+      setVarianti([]);
+      return null;
+    }
+
+    try {
+      const data = await api.get("/analisi-costi/" + id + "/dashboard");
+      setDashboard(data || null);
+      setImpegni(Array.isArray(data?.impegni) ? data.impegni : []);
+      setVarianti(Array.isArray(data?.varianti) ? data.varianti : []);
+      return data;
+    } catch {
+      setDashboard(null);
+      return null;
+    }
+  }
+
   async function salvaAnalisi() {
     if (!voci.length) {
       setErrore("Non ci sono voci da salvare.");
@@ -467,6 +525,7 @@ function AnalisiCosti() {
       setStorico(Array.isArray(storicoDb) ? storicoDb : []);
       setRevisioni(Array.isArray(revDb) ? revDb : []);
       setConfronto(confDb || null);
+      await caricaControlloEnterprise(saved.id);
       return saved;
     } catch (error) {
       setErrore(error.message || "Salvataggio non riuscito.");
@@ -507,6 +566,7 @@ function AnalisiCosti() {
       ]);
       setRevisioni(Array.isArray(revDb) ? revDb : []);
       setConfronto(confDb || null);
+      await caricaControlloEnterprise(saved.id);
       setMessaggio("Analisi salvata caricata.");
     } catch (error) {
       setErrore(error.message || "Impossibile aprire l'analisi.");
@@ -700,6 +760,12 @@ function AnalisiCosti() {
           componenti: {},
           cronoprogramma: {},
           criticita: numero(articolo.ultimoPrezzo) > 0 ? [] : ["Prezzo unitario mancante"],
+          controllo: {
+            wbsCodice: "WBS-" + String(correnti.length + 1).padStart(3, "0"),
+            budgetOperativo: numero(articolo.ultimoPrezzo),
+            avanzamentoPct: 0,
+            quantitaEseguita: 0,
+          },
         },
       ]);
       setMessaggio("Articolo DDT aggiunto all'analisi.");
@@ -711,6 +777,10 @@ function AnalisiCosti() {
   const tabs = [
     ["voci", "Voci di costo"],
     ["dettaglio", "Analisi dettagliata"],
+    ["controllo", "Controllo commessa"],
+    ["cashflow", "Cash flow"],
+    ["fabbisogni", "Fabbisogni"],
+    ["varianti", "Varianti"],
     ["criticita", "Criticità (" + riepilogo.criticita + ")"],
     ["suggerimenti", "Suggerimenti"],
     ["prezzi", "Elenco prezzi"],
