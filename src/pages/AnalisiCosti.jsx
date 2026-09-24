@@ -1459,6 +1459,8 @@ function AnalisiCosti() {
                     <th style={{ padding: "8px" }}>Avanzamento %</th>
                     <th style={{ padding: "8px" }}>Q.tà prevista</th>
                     <th style={{ padding: "8px" }}>Q.tà eseguita</th>
+                    <th style={{ padding: "8px" }}>Inizio previsto</th>
+                    <th style={{ padding: "8px" }}>Fine prevista</th>
                     <th style={{ padding: "8px" }}>Ore previste</th>
                     <th style={{ padding: "8px" }}>Ore reali</th>
                   </tr>
@@ -1503,6 +1505,22 @@ function AnalisiCosti() {
                           value={voce.controllo?.quantitaEseguita ?? 0}
                           onChange={(e) => aggiornaControlloVoce(index, "quantitaEseguita", e.target.value)}
                           style={{ width: "90px" }}
+                        />
+                      </td>
+                      <td style={{ padding: "7px" }}>
+                        <input
+                          type="date"
+                          value={voce.controllo?.dataInizioPrevista || ""}
+                          onChange={(e) => aggiornaControlloVoce(index, "dataInizioPrevista", e.target.value)}
+                          style={{ width: "135px" }}
+                        />
+                      </td>
+                      <td style={{ padding: "7px" }}>
+                        <input
+                          type="date"
+                          value={voce.controllo?.dataFinePrevista || ""}
+                          onChange={(e) => aggiornaControlloVoce(index, "dataFinePrevista", e.target.value)}
+                          style={{ width: "135px" }}
                         />
                       </td>
                       <td style={{ padding: "7px", textAlign: "right" }}>{numero(voce.cronoprogramma?.oreTotali).toFixed(1)}</td>
