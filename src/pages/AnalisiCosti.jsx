@@ -581,9 +581,9 @@ function AnalisiCosti() {
     }
   }
 
-  async function salvaSuPreventivo() {
+  async function confermaAnalisiEGeneraPreventivo() {
     if (!clienteId) {
-      setErrore("Seleziona il cliente prima di generare il preventivo.");
+      setErrore("Seleziona il cliente prima di confermare l'analisi.");
       return;
     }
     if (!voci.length) {
@@ -591,10 +591,36 @@ function AnalisiCosti() {
       return;
     }
 
+    const vociDaVerificare = voci.filter((voce) => voce.stato !== "OK");
+    if (vociDaVerificare.length) {
+      setErrore(
+        "Prima di generare il preventivo devi confermare tutte le voci. Restano " +
+          vociDaVerificare.length +
+          " voci da verificare.",
+      );
+      setTab("voci");
+      return;
+    }
+
     setSalvando(true);
     setErrore("");
+    setMessaggio("");
 
     try {
+      let analisiSalvataId = analisiId;
+      if (analisiSalvataId) {
+        await api.put("/analisi-costi/" + analisiSalvataId, {
+          ...payloadAnalisi(),
+          stato: "CONFERMATA",
+        });
+      } else {
+        const saved = await api.post("/analisi-costi", {
+          ...payloadAnalisi(),
+          stato: "CONFERMATA",
+        });
+        analisiSalvataId = saved.id;
+        setAnalisiId(saved.id);
+      }
       const moltiplicatore = (1 + numero(speseGeneraliPct) / 100) * (1 + numero(marginePct) / 100);
       const righePreventivo = voci.map((voce, index) => ({
         codice: voce.codice || "",
@@ -652,18 +678,21 @@ function AnalisiCosti() {
         setPreventivoId(preventivo.id);
       }
 
-      const savePayload = { ...payloadAnalisi(), preventivoId: preventivo.id };
-      if (analisiId) {
-        await api.put("/analisi-costi/" + analisiId, savePayload);
-      } else {
-        const saved = await api.post("/analisi-costi", savePayload);
-        setAnalisiId(saved.id);
-      }
+      await api.put("/analisi-costi/" + analisiSalvataId, {
+        ...payloadAnalisi(),
+        preventivoId: preventivo.id,
+        stato: "CONFERMATA",
+      });
 
-      setMessaggio("Preventivo creato/aggiornato correttamente.");
+      setPreventivoId(preventivo.id);
+      setMessaggio(
+        "Analisi costi confermata e preventivo " +
+          (preventivo.numero || "") +
+          " generato correttamente.",
+      );
       navigate("/preventivi");
     } catch (error) {
-      setErrore(error.message || "Creazione preventivo non riuscita.");
+      setErrore(error.message || "Conferma analisi e creazione preventivo non riuscite.");
     } finally {
       setSalvando(false);
     }
@@ -1367,8 +1396,14 @@ function AnalisiCosti() {
 
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: "12px", color: "#64748b", fontSize: "12px" }}>
               <span>Totale voci: {voci.length}</span>
-              <button type="button" onClick={salvaSuPreventivo} disabled={salvando || !voci.length}>
-                <Save size={16} /> {preventivoId ? "Aggiorna preventivo" : "Salva su preventivo"}
+              <button
+                type="button"
+                onClick={confermaAnalisiEGeneraPreventivo}
+                disabled={salvando || !voci.length}
+                style={{ background: "#16a34a" }}
+              >
+                <CheckCircle2 size={16} />
+                {preventivoId ? "Conferma analisi e aggiorna preventivo" : "Conferma analisi e genera preventivo"}
               </button>
             </div>
           </div>
