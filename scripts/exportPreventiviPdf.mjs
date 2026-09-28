@@ -658,22 +658,39 @@ async function generaPdf(preventivo, clientiArchivio = []) {
   return Buffer.from(doc.output("arraybuffer"));
 }
 
-const response = await fetch("http://127.0.0.1:3001/api/preventivi");
+const apiBase = process.env.EDILAI_API_BASE || "http://127.0.0.1:3001";
+const response = await fetch(`${apiBase}/api/preventivi`);
 if (!response.ok) throw new Error(`Impossibile leggere i preventivi: ${response.status}`);
 const preventivi = await response.json();
-const clientiResponse = await fetch("http://127.0.0.1:3001/api/clienti");
-const clienti = clientiResponse.ok ? await clientiResponse.json() : [];
 
-await fs.mkdir(outputDir, { recursive: true });
+let rigenerati = 0;
+let errori = 0;
 
 for (const preventivo of preventivi) {
+  const id = preventivo.id;
   const numero = formatNumeroPreventivo(preventivo.numero);
-  const fileName = `${safeFileName(numero)}.pdf`;
-  const filePath = path.join(outputDir, fileName);
-  const buffer = await generaPdf(preventivo, clienti);
-  await rimuoviPdfPrecedenti(numero, fileName);
-  await fs.writeFile(filePath, buffer);
-  console.log(filePath);
+  if (!id) {
+    errori += 1;
+    console.error(`Preventivo senza ID, saltato: ${numero || "(senza numero)"}`);
+    continue;
+  }
+
+  const pdfResponse = await fetch(`${apiBase}/api/preventivi/${id}/pdf`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!pdfResponse.ok) {
+    errori += 1;
+    const dettaglio = await pdfResponse.text().catch(() => "");
+    console.error(`Errore rigenerazione ${numero} (ID ${id}): ${pdfResponse.status} ${dettaglio}`);
+    continue;
+  }
+
+  const risultato = await pdfResponse.json();
+  rigenerati += 1;
+  console.log(`Rigenerato ${numero}: ${risultato.filename || ""}`);
 }
 
-console.log(`Rigenerati ${preventivi.length} preventivi in ${outputDir}.`);
+console.log(`Rigenerazione completata: ${rigenerati} preventivi aggiornati, ${errori} errori.`);
+if (errori > 0) process.exitCode = 1;
