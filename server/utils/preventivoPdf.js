@@ -393,12 +393,18 @@ function disegnaRiquadroClienteCode(doc, clienteCode) {
   const y = 16;
   const width = 36;
   const height = 18;
-  doc.setDrawColor(30, 41, 59);
+  doc.setFillColor(239, 247, 255);
+  doc.setDrawColor(167, 206, 235);
   doc.setLineWidth(0.3);
-  doc.rect(x, y, width, height);
-  doc.setFontSize(8);
+  doc.roundedRect(x, y, width, height, 1.4, 1.4, "FD");
+  doc.setTextColor(13, 56, 110);
+  doc.setFontSize(7.2);
+  doc.setFont(undefined, "normal");
+  doc.text("N. PREVENTIVO", x + width / 2, y + 6, { align: "center" });
+  doc.setFontSize(9);
   doc.setFont(undefined, "bold");
-  doc.text(String(clienteCode), x + width / 2, y + height / 2 + 1, { align: "center" });
+  doc.text(String(clienteCode), x + width / 2, y + 12.4, { align: "center" });
+  doc.setTextColor(0, 0, 0);
 }
 
 export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []) {
@@ -411,24 +417,34 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
   disegnaRiquadroClienteCode(doc, getClienteCode(preventivo, clientiArchivio));
   y = 42;
 
-  doc.setFontSize(12);
+  doc.setFontSize(16);
   doc.setFont(undefined, "bold");
-  doc.setTextColor(255, 0, 0);
+  doc.setTextColor(13, 56, 110);
   doc.text("PREVENTIVO", 105, y, { align: "center" });
+  doc.setDrawColor(30, 103, 184);
+  doc.setLineWidth(0.8);
+  doc.line(94, y + 3, 116, y + 3);
   doc.setTextColor(0, 0, 0);
-  y += 10;
+  y += 11;
+
+  doc.setFillColor(239, 247, 255);
+  doc.setDrawColor(216, 232, 245);
+  doc.roundedRect(8, y - 4.5, 184, 25, 1.5, 1.5, "FD");
 
   [["Cliente:", getClienteNome(preventivo, clientiArchivio)], ["Via:", getClienteVia(preventivo, clientiArchivio)], ["Oggetto:", preventivo.descrizione || ""], ["Commessa:", formatNumeroPreventivo(preventivo.numero)]].forEach(([label, value]) => {
     const valorePdf = normalizzaTestoPdf(value);
     const righeValore = doc.splitTextToSize(valorePdf, 164);
-    doc.setFont(undefined, "bolditalic");
-    doc.setFontSize(8.3);
-    doc.text(label, 8, y);
     doc.setFont(undefined, "bold");
-    doc.text(righeValore, 28, y);
+    doc.setFontSize(8.3);
+    doc.setTextColor(13, 56, 110);
+    doc.text(label, 11, y);
+    doc.setFont(undefined, "normal");
+    doc.setTextColor(18, 47, 79);
+    doc.text(righeValore, 34, y);
     y += Math.max(4.8, righeValore.length * 4.2);
   });
   doc.setFont(undefined, "normal");
+  doc.setTextColor(0, 0, 0);
   y += 5;
 
   const computoRows = [];
@@ -441,7 +457,7 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
     const titolo = righe[titoloSubtotaleAttivo];
     const subtotale = calcolaSubtotaleCapitoloPdf(righe, titoloSubtotaleAttivo);
     if ((titolo?.mostraSubtotaleCapitolo || titolo?.mostra_subtotale_capitolo) && subtotale > 0) {
-      computoRows.push([{ content: `TOTALE CAPITOLO ${formatEuro(subtotale)}`, colSpan: 9, styles: { fontStyle: "bold", halign: "right", fillColor: [255, 247, 237] } }]);
+      computoRows.push([{ content: `TOTALE CAPITOLO ${formatEuro(subtotale)}`, colSpan: 9, styles: { fontStyle: "bold", halign: "right", fillColor: [239, 247, 255] } }]);
     }
   };
 
@@ -508,8 +524,8 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
     head: [[{ content: "Num.Ord.\nTARIFFA", rowSpan: 2 }, { content: "DESIGNAZIONE DEI LAVORI", rowSpan: 2 }, { content: "D I M E N S I O N I", colSpan: 4 }, { content: "Quantit\u00e0", rowSpan: 2 }, { content: "I M P O R T I", colSpan: 2 }], ["par.ug.", "lung.", "larg.", "H/peso", "unitario", "TOTALE"]],
     body: computoRows,
     theme: "grid",
-    styles: { fontSize: 7.2, cellPadding: { top: 1.3, right: 0.8, bottom: 1.3, left: 0.8 }, overflow: "linebreak", valign: "top", textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: { top: 0, right: 0.12, bottom: 0, left: 0.12 } },
-    headStyles: { fillColor: [244, 177, 131], textColor: [0, 0, 0], fontStyle: "bold", halign: "center", lineColor: [0, 0, 0], lineWidth: 0.15 },
+    styles: { fontSize: 7.2, cellPadding: { top: 1.3, right: 0.8, bottom: 1.3, left: 0.8 }, overflow: "linebreak", valign: "top", textColor: [18, 47, 79], lineColor: [201, 220, 236], lineWidth: { top: 0.08, right: 0.08, bottom: 0.08, left: 0.08 } },
+    headStyles: { fillColor: [230, 242, 252], textColor: [13, 56, 110], fontStyle: "bold", halign: "center", lineColor: [190, 213, 232], lineWidth: 0.12 },
     columnStyles: { 0: { cellWidth: 15, halign: "center" }, 1: { cellWidth: 80 }, 2: { cellWidth: 12, halign: "center" }, 3: { cellWidth: 12, halign: "right" }, 4: { cellWidth: 12, halign: "right" }, 5: { cellWidth: 12, halign: "right" }, 6: { cellWidth: 12, halign: "right" }, 7: { cellWidth: 15, halign: "right" }, 8: { cellWidth: 16, halign: "right" } },
     margin: { top: 14, left: 8, right: 8, bottom: 18 },
     pageBreak: "auto",
@@ -584,12 +600,16 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
   }
   const totaleY = y + 2;
   const totaleNettoPdf = getTotaleNettoPdf(preventivo, righe);
-  doc.setFillColor(244, 177, 131);
+  doc.setFillColor(230, 242, 252);
+  doc.setDrawColor(190, 213, 232);
+  doc.setLineWidth(0.15);
   doc.rect(8, totaleY, 184, 5.2, "FD");
+  doc.setTextColor(13, 56, 110);
   doc.setFontSize(8);
   doc.setFont(undefined, "bold");
   doc.text("TOTALE", 171, totaleY + 3.7, { align: "right" });
   doc.text(formatEuro(totaleNettoPdf), 190.8, totaleY + 3.7, { align: "right" });
+  doc.setTextColor(0, 0, 0);
   y = totaleY + 10.2;
 
   [
@@ -597,21 +617,34 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
     ["ESCLUSIONI:", ["- La stesura e presentazione agli Enti preposti delle pratiche necessarie all'esecuzione delle opere ed ogni altro annesso.", "- Oneri per richieste di allacciamenti agli enti competenti ed eventuali opere edili accessorie.", "- Eventuali opere aggiuntive e non espressamente indicate nella presente offerta, richieste dagli Enti interessati.", "- Tutto quanto non espressamente citato nella presente offerta."]],
     ["NOTE:", ["- Eventuali lavori extra eseguiti, non espressamente citati nella presente, saranno richiesti dalla Committente e regolarmente assegnati previa accettazione di relativo preventivo Extra dedicato.", '- I lavori oggetto del presente preventivo vengono affidati al Fornitore "A MISURA".', "- La Committente dovr\u00e0 mettere a disposizione dell'Impresa energia elettrica e acqua, ai fini dell'esecuzione delle opere."]],
   ].forEach(([titolo, righeTesto]) => {
-    if (y > 245) {
+    const linee = righeTesto.map((riga) => doc.splitTextToSize(riga.replace(/^[-•]\s*/, ""), 174));
+    const contentHeight = linee.reduce((somma, split) => somma + split.length * 4.2 + 1.3, 0);
+    const boxHeight = 8 + contentHeight + 4;
+    if (y + boxHeight > 276) {
       doc.addPage();
       y = 24;
     }
+
+    doc.setFillColor(230, 242, 252);
+    doc.setDrawColor(201, 220, 236);
+    doc.setLineWidth(0.12);
+    doc.roundedRect(8, y - 4, 184, boxHeight, 1.2, 1.2, "S");
+    doc.rect(8, y - 4, 184, 7, "F");
     doc.setFontSize(8.4);
     doc.setFont(undefined, "bold");
-    doc.text(titolo, 14, y);
+    doc.setTextColor(13, 56, 110);
+    doc.text(titolo, 11, y + 0.5);
+
     doc.setFont(undefined, "normal");
-    y += 7;
-    righeTesto.forEach((riga) => {
-      const split = doc.splitTextToSize(riga, 182);
-      doc.text(split, 14, y);
-      y += split.length * 4.4 + 1.4;
+    doc.setTextColor(18, 47, 79);
+    let textY = y + 8;
+    linee.forEach((split) => {
+      doc.text("•", 12, textY);
+      doc.text(split, 17, textY);
+      textY += split.length * 4.2 + 1.3;
     });
-    y += 4;
+    doc.setTextColor(0, 0, 0);
+    y += boxHeight + 5;
   });
 
   if (y > 276) {
