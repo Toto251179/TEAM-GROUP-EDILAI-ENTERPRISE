@@ -17,6 +17,8 @@ async function request(path, options = {}) {
       `HTTP ${response.status}`,
       data?.code,
       data?.message || "Richiesta non riuscita",
+      data?.errore ? `Dettaglio: ${data.errore}` : "",
+      data?.motivo ? `Motivo: ${data.motivo}` : "",
       data?.field ? `Campo: ${data.field}` : "",
     ].filter(Boolean);
     const error = new Error(detailParts.join(" - "));
