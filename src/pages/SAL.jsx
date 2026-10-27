@@ -156,7 +156,7 @@ function SAL() {
     setErrore("");
 
     const payload = {
-      cantiereId: form.cantiereId ? Number(form.cantiereId) : null,
+      cantiereId: form.cantiereId ? String(form.cantiereId) : null,
       clienteCode: form.clienteCode || "",
       data: form.data,
       cantiere: form.cantiere,
