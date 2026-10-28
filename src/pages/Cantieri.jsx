@@ -55,6 +55,12 @@ function statoCanonico(stato) {
   return "In Corso";
 }
 
+// I cantieri completati valgono il 100% dei lavori eseguiti.
+// Il dato viene calcolato, non sovrascritto nel database.
+function importoLavoriEseguiti(cantiere) {
+  return statoCanonico(cantiere.stato) === "Completato" ? Number(cantiere.importo || 0) : 0;
+}
+
 function formatDate(value) {
   if (!value) return "";
   return new Date(value).toLocaleDateString("it-IT");
@@ -153,6 +159,7 @@ function Cantieri() {
       sospesi: cantieriFiltrati.filter((cantiere) => statoCanonico(cantiere.stato) === "Sospeso").length,
       completati: cantieriFiltrati.filter((cantiere) => statoCanonico(cantiere.stato) === "Completato").length,
       importo: cantieriFiltrati.reduce((totale, cantiere) => totale + Number(cantiere.importo || 0), 0),
+      lavoriEseguiti: cantieriFiltrati.reduce((totale, cantiere) => totale + importoLavoriEseguiti(cantiere), 0),
     }),
     [cantieriFiltrati],
   );
@@ -285,7 +292,7 @@ function Cantieri() {
   const esportaCantieri = () => {
     esportaCsv(
       `cantieri-${new Date().toISOString().slice(0, 10)}.csv`,
-      ["Nome", "Cliente", "Indirizzo", "Data inizio", "Fine prevista", "Importo", "Stato", "Note"],
+      ["Nome", "Cliente", "Indirizzo", "Data inizio", "Fine prevista", "Importo preventivato", "Lavori eseguiti", "Stato", "Note"],
       cantieriFiltrati.map((cantiere) => [
         cantiere.nome,
         cantiere.cliente,
@@ -293,6 +300,7 @@ function Cantieri() {
         formatDate(cantiere.dataInizio),
         formatDate(cantiere.dataFinePrevista),
         cantiere.importo,
+        importoLavoriEseguiti(cantiere),
         cantiere.stato,
         cantiere.note,
       ]),
@@ -376,7 +384,7 @@ function Cantieri() {
 
     .cantieri-stats {
       display: grid;
-      grid-template-columns: repeat(5, minmax(150px, 1fr));
+      grid-template-columns: repeat(6, minmax(150px, 1fr));
       gap: 10px;
       margin-bottom: 12px;
     }
@@ -657,6 +665,18 @@ function Cantieri() {
       white-space: nowrap;
     }
 
+    .cantieri-importi {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .cantieri-importi strong {
+      font-weight: 800;
+    }
+
     .cantieri-status {
       display: inline-flex;
       align-items: center;
@@ -905,8 +925,15 @@ function Cantieri() {
         </div>
         <div className="cantieri-stat-card value">
           <div>
-            <span>Valore</span>
+            <span>Valore preventivato</span>
             <strong>{formatEuro(riepilogo.importo)}</strong>
+          </div>
+          <span className="cantieri-stat-icon"><Euro size={22} /></span>
+        </div>
+        <div className="cantieri-stat-card value">
+          <div>
+            <span>Lavori eseguiti</span>
+            <strong>{formatEuro(riepilogo.lavoriEseguiti)}</strong>
           </div>
           <span className="cantieri-stat-icon"><Euro size={22} /></span>
         </div>
@@ -1009,7 +1036,7 @@ function Cantieri() {
                     <th>INDIRIZZO</th>
                     <th>DATA ULTIMO</th>
                     <th>FINE PREVISTA</th>
-                    <th>VOLUME</th>
+                    <th>IMPORTI</th>
                     <th>STATO</th>
                     <th>NOTA</th>
                     <th>AZIONI</th>
@@ -1055,7 +1082,12 @@ function Cantieri() {
                         </td>
                         <td>{formatDate(cantiere.dataInizio) || "-"}</td>
                         <td>{formatDate(cantiere.dataFinePrevista) || "-"}</td>
-                        <td className="cantieri-money">{formatEuro(cantiere.importo)}</td>
+                        <td>
+                          <div className="cantieri-importi">
+                            <span>Preventivato: <strong>{formatEuro(cantiere.importo)}</strong></span>
+                            <span>Lavori eseguiti: <strong>{formatEuro(importoLavoriEseguiti(cantiere))}</strong></span>
+                          </div>
+                        </td>
                         <td>
                           <select
                             className="cantieri-status"
@@ -1133,8 +1165,9 @@ function Cantieri() {
                         <span className="cantieri-primary">{formatDate(cantiere.dataInizio) || "-"} / {formatDate(cantiere.dataFinePrevista) || "-"}</span>
                       </div>
                       <div>
-                        <span className="cantieri-secondary">Volume</span>
-                        <span className="cantieri-money">{formatEuro(cantiere.importo)}</span>
+                        <span className="cantieri-secondary">Importi</span>
+                        <span className="cantieri-primary">Preventivato: {formatEuro(cantiere.importo)}</span>
+                        <span className="cantieri-money">Lavori eseguiti: {formatEuro(importoLavoriEseguiti(cantiere))}</span>
                       </div>
                       <div>
                         <span className="cantieri-secondary">Stato</span>
