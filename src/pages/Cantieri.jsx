@@ -1086,6 +1086,7 @@ function Cantieri() {
                           <div className="cantieri-importi">
                             <span>Preventivato: <strong>{formatEuro(cantiere.importo)}</strong></span>
                             <span>Lavori eseguiti: <strong>{formatEuro(importoLavoriEseguiti(cantiere))}</strong></span>
+                            <span>Residuo: <strong>{formatEuro(Number(cantiere.importo || 0) - importoLavoriEseguiti(cantiere))}</strong></span>
                           </div>
                         </td>
                         <td>
@@ -1168,6 +1169,7 @@ function Cantieri() {
                         <span className="cantieri-secondary">Importi</span>
                         <span className="cantieri-primary">Preventivato: {formatEuro(cantiere.importo)}</span>
                         <span className="cantieri-money">Lavori eseguiti: {formatEuro(importoLavoriEseguiti(cantiere))}</span>
+                        <span className="cantieri-primary">Residuo: {formatEuro(Number(cantiere.importo || 0) - importoLavoriEseguiti(cantiere))}</span>
                       </div>
                       <div>
                         <span className="cantieri-secondary">Stato</span>
