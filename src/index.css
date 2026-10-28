@@ -13,10 +13,11 @@
   --enterprise-danger: #c62828;
   --enterprise-warning: #b7791f;
   --enterprise-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-  font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+  --enterprise-font-family: "Abadi", "Abadi MT", "Segoe UI", Arial, sans-serif;
+  font-family: var(--enterprise-font-family);
   color: var(--enterprise-text);
   background: var(--enterprise-bg);
-  font-synthesis: none;
+  font-synthesis: weight;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -42,6 +43,26 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+/* Font globale: copre anche i controlli e i componenti Material UI. */
+body,
+button,
+input,
+select,
+textarea,
+option,
+.MuiTypography-root,
+.MuiButton-root,
+.MuiInputBase-root,
+.MuiInputLabel-root,
+.MuiFormLabel-root,
+.MuiMenuItem-root,
+.MuiChip-root,
+.MuiDataGrid-root,
+.MuiTableCell-root,
+.MuiTooltip-tooltip {
+  font-family: var(--enterprise-font-family) !important;
 }
 
 button {
