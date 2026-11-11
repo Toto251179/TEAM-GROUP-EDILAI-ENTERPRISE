@@ -4,7 +4,7 @@ import path from "node:path";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { env } from "../config/env.js";
-import { risolviRootArchivioDocumenti, risolviRadiciArchiviDocumentali } from "./archivioRoot.js";
+import { risolviRootArchivioDocumenti, risolviRadiciArchiviDocumentali, risolviCartellaClientiArchivio } from "./archivioRoot.js";
 import { pubblicaPdfConStorico } from "./pdfSuperati.js";
 import {
   getTipoRiga,
@@ -646,7 +646,7 @@ async function salvaPdfPreventivoInRadice(preventivo, clientiArchivio, rootOutpu
   const { base, revisione } = parseNumeroRevisione(preventivo.numero);
   const clienteNome = getClienteNome(preventivo, clientiArchivio) || "CLIENTE";
   const clienteCode = getClienteCode(preventivo, clientiArchivio) || "SENZA-ID";
-  const clientiRoot = path.join(rootOutputDir, "Clienti");
+  const clientiRoot = await risolviCartellaClientiArchivio(rootOutputDir);
   const clienteFolderName = safeFileName(`${clienteCode} - ${clienteNome}`);
   const clienteFolderPath = await ensureCanonicalDirectory(clientiRoot, clienteFolderName, `${safeFileName(clienteCode)} - `);
   const { folderPath, sottoCartelle } = await assicuraStrutturaPreventivo(clienteFolderPath, preventivo);
@@ -746,7 +746,7 @@ export async function trovaPdfPreventivoArchiviato(preventivo, clientiArchivio =
   const { base, revisione } = parseNumeroRevisione(preventivo.numero);
   const clienteNome = getClienteNome(preventivo, clientiArchivio) || "CLIENTE";
   const clienteCode = getClienteCode(preventivo, clientiArchivio) || "SENZA-ID";
-  const clientiRoot = path.join(rootOutputDir, "Clienti");
+  const clientiRoot = await risolviCartellaClientiArchivio(rootOutputDir);
   const clienteFolderName =
     await findDirectoryByPrefix(clientiRoot, `${safeFileName(clienteCode)} - `) ||
     safeFileName(`${clienteCode} - ${clienteNome}`);
@@ -793,7 +793,7 @@ export async function assicuraCartellaPreventiviCliente(preventivo, clientiArchi
   const rootOutputDir = await resolvePreventiviOutputDir(outputDir);
   const clienteNome = getClienteNome(preventivo, clientiArchivio) || "CLIENTE";
   const clienteCode = getClienteCode(preventivo, clientiArchivio) || "SENZA-ID";
-  const clientiRoot = path.join(rootOutputDir, "Clienti");
+  const clientiRoot = await risolviCartellaClientiArchivio(rootOutputDir);
   const clienteFolderName = safeFileName(`${clienteCode} - ${clienteNome}`);
   const clienteFolderPath = await ensureCanonicalDirectory(clientiRoot, clienteFolderName, `${safeFileName(clienteCode)} - `);
   const { folderPath, sottoCartelle } = await assicuraStrutturaPreventivo(clienteFolderPath, preventivo);
