@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pool, query } from "../config/db.js";
-import { env } from "../config/env.js";
+import { risolviRootArchivioDocumenti, risolviCartellaClientiArchivio } from "../utils/archivioRoot.js";
 import { createCrudRepository } from "../utils/crud.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
@@ -39,7 +39,8 @@ const repository = createCrudRepository({
 });
 
 const router = Router();
-const SOTTOCARTELLE_CLIENTE = ["PREVENTIVI", "CANTIERI", "CHIAMATE", "RAPPORTINI", "FOTO", "DOCUMENTI"];
+// Le cartelle documentali appartengono alle singole commesse/preventivi.
+const SOTTOCARTELLE_CLIENTE = [];
 
 function toCamel(row) {
   return Object.fromEntries(
@@ -110,35 +111,7 @@ async function pathExists(targetPath) {
 }
 
 async function leggiPercorsoArchivioConfigurato() {
-  let archivePath = "";
-  try {
-    const result = await query("SELECT data->>'archivePath' AS archive_path FROM system_settings WHERE id = $1", ["system"]);
-    archivePath = String(result.rows[0]?.archive_path || "").trim();
-  } catch (error) {
-    if (error.code !== "42P01") throw error;
-  }
-
-  const home = os.homedir();
-  const oneDrive = process.env.OneDrive || process.env.OneDriveCommercial || process.env.OneDriveConsumer;
-  const candidati = [
-    archivePath,
-    process.env.PREVENTIVI_OUTPUT_DIR,
-    env.preventivi.outputDir,
-    path.join(home, "Desktop", "PREVENTIVI TEAM GROUP"),
-    oneDrive ? path.join(oneDrive, "Desktop", "PREVENTIVI TEAM GROUP") : "",
-  ]
-    .filter(Boolean)
-    .filter((item) => !String(item).includes("<UTENTE>"))
-    .map((item) => path.resolve(item));
-
-  const unici = [...new Set(candidati)];
-  if (!unici.length) return "";
-
-  for (const candidato of unici) {
-    if (await pathExists(candidato)) return candidato;
-  }
-
-  return unici[0];
+  return risolviRootArchivioDocumenti();
 }
 
 async function trovaCartellaCliente(clientiRoot, idClienteSafe) {
@@ -165,7 +138,7 @@ async function risolviCartellaCliente(cliente, { crea = false, apri = false } = 
     throw creaErroreCliente(400, "ID Cliente e ragione sociale sono obbligatori per la cartella archivio.", "id_cliente", "CLIENTE_ARCHIVIO_DATI_MANCANTI");
   }
 
-  const clientiRoot = path.join(archiveRoot, "CLIENTI");
+  const clientiRoot = await risolviCartellaClientiArchivio(archiveRoot);
   const nomeCartella = `${idClienteSafe} - ${ragioneSocialeSafe}`;
   const esistente = await trovaCartellaCliente(clientiRoot, idClienteSafe);
   const folderPath = path.join(clientiRoot, esistente || nomeCartella);

@@ -393,12 +393,12 @@ function generaNumeroPreventivo(preventivi) {
 
 function formatNumeroPreventivo(numero) {
   const valore = String(numero || "").trim();
-  const match = valore.match(/PREV-(?:\d{4}-)?(\d+)/);
+  const match = valore.match(/\b(PREV-\d+(?:[-/]\d+)?)\b/i);
   if (!match) return valore;
 
   const revisioneTrovata = valore.match(/\bRev[._\s-]*(\d+)/i)?.[1];
   const revisione = revisioneTrovata && revisioneTrovata.length <= 2 ? revisioneTrovata : "00";
-  return `PREV-${match[1]} -Rev${String(revisione).padStart(2, "0")}`;
+  return `${match[1].toUpperCase()} -Rev${String(revisione).padStart(2, "0")}`;
 }
 
 function formatIndirizzoCompleto(indirizzo) {
@@ -1002,7 +1002,11 @@ function Preventivi() {
 
     try {
       const risposta = await api.post(`/preventivi/${preventivo.id}/archivia-pdf`, {});
-      setMessaggio(risposta.message || "Preventivo archiviato correttamente.");
+      if (risposta.archivioSync?.ok) {
+        setMessaggio(risposta.message || "Preventivo archiviato correttamente.");
+      } else {
+        setErrore(risposta.archivioSync?.messaggio || "Non tutte le cartelle esterne sono aggiornate.");
+      }
       await aggiornaVistaDaDatabase();
       return risposta;
     } catch (error) {
@@ -1143,15 +1147,27 @@ function Preventivi() {
       }
 
       if (payload.stato === "Accettato") {
-        await api.post(`/preventivi/${salvato.id}/accetta`, {});
+        const accettazione = await api.post(`/preventivi/${salvato.id}/accetta`, {});
         await aggiornaVistaDaDatabase();
+        if (!salvato.archivioSync?.ok || !accettazione.archivioSync?.ok) {
+          setErrore(accettazione.archivioSync?.messaggio || salvato.archivioSync?.messaggio || "Preventivo accettato; archivio da verificare.");
+          return;
+        }
         window.location.href = "/cantieri";
         return;
       }
 
-      await archiviaPreventivoPdf(salvato);
       const { preventiviDb } = await aggiornaVistaDaDatabase();
       resetForm(preventiviDb);
+      if (salvato.archivioSync?.ok) {
+        setMessaggio("Preventivo salvato e aggiornato in tutte le cartelle esterne configurate.");
+      } else {
+        const fallite = (salvato.archivioSync?.destinazioni || [])
+          .filter((item) => !item.ok)
+          .map((item) => item.root)
+          .join(", ");
+        setErrore(`${salvato.archivioSync?.messaggio || "Preventivo salvato, ma archivi da verificare."}${fallite ? ` Destinazioni: ${fallite}` : ""}`);
+      }
     } catch (error) {
       await aggiornaVistaDaDatabase().catch(() => {});
       setErrore(error.message);
@@ -1178,14 +1194,23 @@ function Preventivi() {
 
     try {
       if (stato === "Accettato") {
-        await api.post(`/preventivi/${preventivo.id}/accetta`, {});
+        const risposta = await api.post(`/preventivi/${preventivo.id}/accetta`, {});
         await aggiornaVistaDaDatabase();
+        if (!risposta.archivioSync?.ok) {
+          setErrore(risposta.archivioSync?.messaggio || "Preventivo accettato; archivio da verificare.");
+          return;
+        }
         window.location.href = "/cantieri";
         return;
       }
 
-      await api.put(`/preventivi/${preventivo.id}`, { stato });
+      const aggiornato = await api.put(`/preventivi/${preventivo.id}`, { stato });
       await aggiornaVistaDaDatabase();
+      if (aggiornato.archivioSync?.ok) {
+        setMessaggio("Stato aggiornato e PDF sincronizzato.");
+      } else {
+        setErrore(aggiornato.archivioSync?.messaggio || "Stato salvato; archivio da verificare.");
+      }
     } catch (error) {
       setErrore(error.message);
     }
@@ -1198,8 +1223,12 @@ function Preventivi() {
     setErrore("");
 
     try {
-      await api.post(`/preventivi/${preventivo.id}/accetta`, {});
+      const risposta = await api.post(`/preventivi/${preventivo.id}/accetta`, {});
       await aggiornaVistaDaDatabase();
+      if (!risposta.archivioSync?.ok) {
+        setErrore(risposta.archivioSync?.messaggio || "Preventivo accettato; archivio da verificare.");
+        return;
+      }
       window.location.href = "/cantieri";
     } catch (error) {
       setErrore(error.message);
@@ -1285,7 +1314,11 @@ function Preventivi() {
         throw new Error("Errore generazione PDF");
       }
       await apriPdfHttp(preventivo, nuovaScheda);
-      setMessaggio("PDF generato e aperto");
+      if (risposta.archivioSync?.ok) {
+        setMessaggio("PDF generato e aggiornato in tutte le cartelle esterne.");
+      } else {
+        setErrore(risposta.archivioSync?.messaggio || "PDF generato, ma alcune cartelle non sono aggiornate.");
+      }
       await aggiornaVistaDaDatabase();
     } catch (error) {
       if (nuovaScheda && !nuovaScheda.closed) nuovaScheda.close();
@@ -1721,6 +1754,24 @@ function Preventivi() {
             variant={params.value === "Bozza" ? "outlined" : "filled"}
           />
         ),
+      },
+      {
+        field: "archivioSync",
+        headerName: "Archivio",
+        minWidth: 150,
+        sortable: false,
+        renderCell: (params) => {
+          const stato = params.value?.stato;
+          return (
+            <Chip
+              size="small"
+              label={stato === "SINCRONIZZATO" ? "Sincronizzato" : stato === "DA_VERIFICARE" ? "Da verificare" : "Non verificato"}
+              color={stato === "SINCRONIZZATO" ? "success" : stato === "DA_VERIFICARE" ? "warning" : "default"}
+              variant={stato ? "filled" : "outlined"}
+              title={params.value?.messaggio || "Archivio non ancora verificato"}
+            />
+          );
+        },
       },
       {
         field: "dataFormattata",

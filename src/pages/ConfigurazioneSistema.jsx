@@ -19,6 +19,8 @@ function ConfigurazioneSistema() {
   const [googleKey, setGoogleKey] = useState("");
   const [message, setMessage] = useState("");
   const [tests, setTests] = useState(null);
+  const [riordino, setRiordino] = useState(null);
+  const [riordinoInCorso, setRiordinoInCorso] = useState(false);
 
   const carica = async () => {
     const data = await api.get("/system-settings");
@@ -33,6 +35,7 @@ function ConfigurazioneSistema() {
   const salva = async (extra = {}) => {
     const body = {
       archivePath: form.archivePath,
+      archiveMirrors: Array.isArray(form.archiveMirrors) ? form.archiveMirrors : [],
       excelClienti: form.excelClienti,
       sync: form.sync,
       backup: form.backup,
@@ -53,6 +56,29 @@ function ConfigurazioneSistema() {
     } catch (error) {
       setMessage(error.message);
       throw error;
+    }
+  };
+
+  const controllaRiordino = async (esegui = false) => {
+    if (esegui && !riordino) {
+      setMessage("Prima visualizza l'anteprima del riordino.");
+      return;
+    }
+    if (esegui && !window.confirm(
+      "Il gestionale sposterà solo i PDF associati con certezza a un lavoro, creando prima una copia di sicurezza esterna. Le cartelle non vuote non saranno cancellate. Procedere?",
+    )) return;
+    setRiordinoInCorso(true);
+    try {
+      const risultato = await api.post("/system-settings/riordina-preventivi", {
+        esegui,
+        ...(esegui ? { conferma: "RIORDINA" } : {}),
+      });
+      setRiordino(risultato);
+      setMessage(risultato.message || "Controllo archivio completato.");
+    } catch (error) {
+      setMessage("Errore riordino archivio: " + error.message);
+    } finally {
+      setRiordinoInCorso(false);
     }
   };
 
@@ -117,6 +143,14 @@ function ConfigurazioneSistema() {
           <label>Percorso cartella principale</label>
           <input value={form.archivePath || ""} onChange={(event) => update("archivePath", event.target.value)} />
           <p>Percorso attuale: {settings.archivePath}</p>
+          <label>Cartelle esterne aggiuntive da aggiornare automaticamente (una per riga)</label>
+          <textarea
+            rows={3}
+            placeholder="Inserisci un percorso completo per riga"
+            value={(form.archiveMirrors || []).join("\n")}
+            onChange={(event) => update("archiveMirrors", event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean))}
+          />
+          <p>Ogni volta che salvi o modifichi un preventivo, il PDF sarà aggiornato nella cartella principale e in tutte queste copie, mantenendo la stessa struttura per condominio e lavoro.</p>
           <p>Ultimo PDF archiviato: {settings.logs?.archive?.lastPdf || "-"}</p>
           <p>Data ultimo salvataggio: {settings.logs?.archive?.date ? new Date(settings.logs.archive.date).toLocaleString("it-IT") : "-"}</p>
           <div className="config-actions">
@@ -125,6 +159,32 @@ function ConfigurazioneSistema() {
             <button onClick={() => runTest("/system-settings/test-archive", { archivePath: form.archivePath })}>Verifica cartella</button>
             <button onClick={() => apriCartellaBackend(form.archivePath || settings.archivePath)}>Apri cartella</button>
           </div>
+          <h3>Riordino dei preventivi già presenti</h3>
+          <p>Controlla che i PDF siano nella cartella Preventivi del rispettivo lavoro. Le cartelle generiche vuote possono essere eliminate; quelle contenenti altri documenti vengono conservate.</p>
+          <div className="config-actions">
+            <button disabled={riordinoInCorso} onClick={() => controllaRiordino(false)}>
+              {riordinoInCorso ? "Controllo in corso..." : "Verifica archivio (senza modifiche)"}
+            </button>
+            <button disabled={riordinoInCorso || !riordino || riordino.modalita !== "ANTEPRIMA"} onClick={() => controllaRiordino(true)}>
+              Riordina con copia di sicurezza
+            </button>
+          </div>
+          {riordino && (
+            <div className="config-result-grid">
+              <p>Operazione: {riordino.modalita === "ANTEPRIMA" ? "Solo controllo" : "Riordino eseguito"}</p>
+              <p>PDF individuati: {riordino.documenti?.length || 0}</p>
+              <p>PDF non assegnabili automaticamente: {riordino.nonAssegnati?.length || 0}</p>
+              <p>Conflitti di nomi: {riordino.conflitti?.length || 0}</p>
+              <p>Cartelle generiche ancora da verificare: {riordino.cartelleDaVerificare?.length || 0}</p>
+              {riordino.backup && <p>Copia di sicurezza: {riordino.backup}</p>}
+              {(riordino.cartelleDaVerificare || []).length > 0 && (
+                <p>Cartelle conservate perché potrebbero contenere documenti: {riordino.cartelleDaVerificare.join(" · ")}</p>
+              )}
+              {(riordino.conflitti || []).length > 0 && (
+                <p>Documenti con nome duplicato non sovrascritti: {riordino.conflitti.map((item) => item.origine).join(" · ")}</p>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="config-card">
