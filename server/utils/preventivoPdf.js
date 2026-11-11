@@ -42,7 +42,7 @@ function formatDate(value) {
   return new Date(value).toLocaleDateString("it-IT");
 }
 
-function formatNumeroPreventivo(numero) {
+export function formatNumeroPreventivo(numero) {
   const valore = String(numero || "").trim();
   // Identificativi come PREV-253-26, PREV-26180 e PREV-274/26
   // devono conservare l'intero numero del lavoro.
@@ -61,7 +61,7 @@ function safeFileName(name) {
     .replace(/[. ]+$/g, "");
 }
 
-function parseNumeroRevisione(numero) {
+export function parseNumeroRevisione(numero) {
   const formattato = formatNumeroPreventivo(numero);
   const baseMatch = formattato.match(/^(PREV-\d+(?:[-/]\d+)?)/i);
   const revMatch = formattato.match(/\bRev[._\s-]*(\d+)/i);
