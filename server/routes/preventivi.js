@@ -921,49 +921,27 @@ router.post("/:id/pdf", asyncHandler(async (req, res) => {
   const preventivo = await getPreventivoCompleto(req.params.id);
   if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
 
-  const cliente = await getClienteCompleto(preventivo.clienteId);
-  let archivio;
   const endpoint = `/api/preventivi/${req.params.id}/pdf`;
-  try {
-    archivio = await archiviaPdfPreventivo(preventivo, cliente ? [cliente] : undefined);
-    await salvaArchivioPreventivo(req.params.id, archivio);
-    const pdfPath = archivio.filePath;
-    const stat = await fs.stat(pdfPath);
-    console.info("PDF preventivo generato", {
-      status: 200,
-      endpoint,
-      fileName: archivio.fileName,
-      filePath: pdfPath,
-      size: stat.size,
-    });
-    res.json({
-      success: true,
-      message: "PDF generato e aperto",
-      pdfUrl: endpoint,
-      filename: archivio.fileName,
-      size: stat.size,
-      archivio: {
-        fileName: archivio.fileName,
-        folderPath: archivio.folderPath,
-      },
-    });
-  } catch (error) {
-    console.error("Errore generazione PDF preventivo", {
-      status: error.code === "EBUSY" || error.code === "EACCES" ? 409 : 500,
-      endpoint,
-      fileName: archivio?.fileName,
-      filePath: archivio?.filePath,
-      error: error.message,
-    });
-    return res.status(error.code === "EBUSY" || error.code === "EACCES" ? 409 : 500).json({
-      code: error.code === "EBUSY" || error.code === "EACCES" ? "PDF_IN_USO" : "ERRORE_GENERAZIONE_PDF",
-      message: error.code === "EBUSY" || error.code === "EACCES"
-        ? "Il PDF e aperto in un altro programma. Chiudilo e riprova."
-        : "Errore generazione PDF",
-      errore: error.message,
-      filename: archivio?.fileName,
+  const archivioSync = await sincronizzaArchivioDopoSalvataggio(preventivo);
+  const principale = archivioSync.destinazioni.find((item) => item.principale);
+  if (!principale?.ok || !principale.filePath) {
+    return res.status(503).json({
+      code: "PDF_ARCHIVIAZIONE_NON_RIUSCITA",
+      message: archivioSync.messaggio,
+      archivioSync,
     });
   }
+
+  const stat = await fs.stat(principale.filePath);
+  res.json({
+    success: true,
+    message: archivioSync.messaggio,
+    pdfUrl: endpoint,
+    filename: path.basename(principale.filePath),
+    size: stat.size,
+    archivio: { fileName: path.basename(principale.filePath), folderPath: path.dirname(path.dirname(principale.filePath)) },
+    archivioSync,
+  });
 }));
 
 router.get("/:id/cartella", asyncHandler(async (req, res) => {
