@@ -2,10 +2,10 @@
  * Migrazione prudente dell'archivio dei preventivi Team Group.
  *
  * ANTEPRIMA (non scrive nulla):
- * node scripts/migraArchivioPreventivi.mjs --origine "D:\\ARCHIVIO-ESTERNO" --destinazione "D:\\TEAMGROUP SERVER"
+ * node scripts/migraArchivioPreventivi.mjs --origine "D:\ARCHIVIO-ESTERNO" --destinazione "D:\TEAMGROUP SERVER"
  *
  * COPIA (non elimina gli originali e non sovrascrive):
- * node scripts/migraArchivioPreventivi.mjs --origine "D:\\ARCHIVIO-ESTERNO" --destinazione "D:\\TEAMGROUP SERVER" --esegui
+ * node scripts/migraArchivioPreventivi.mjs --origine "D:\ARCHIVIO-ESTERNO" --destinazione "D:\TEAMGROUP SERVER" --esegui
  *
  * La destinazione DEVE essere la cartella originale del server, individuata
  * dall'amministratore. Il comando non modifica le impostazioni del gestionale.
@@ -26,12 +26,12 @@ const esegui = args.includes("--esegui");
 const stats = { preventivi: 0, cartelle: 0, fileCopiati: 0, fileIdentici: 0, conflitti: [], senzaOrigine: [] };
 
 function sicuro(value) {
-  return String(value || "").replace(/[<>:"/\\\\|?*]+/g, "-").replace(/\\s+/g, " ").trim().replace(/[. ]+$/g, "");
+  return String(value || "").replace(/[<>:"\/\\|?*]+/g, "-").replace(/\s+/g, " ").trim().replace(/[. ]+$/g, "");
 }
 function baseNumero(value) {
   const testo = String(value || "").trim();
-  const match = testo.match(/PREV-(?:\\d{4}-)?\\d+/i);
-  return match ? match[0].toUpperCase() : sicuro(testo.replace(/Rev[._\\s-]*\\d+/i, "").trim());
+  const match = testo.match(/PREV-(?:\d{4}-)?\d+/i);
+  return match ? match[0].toUpperCase() : sicuro(testo.replace(/Rev[._\s-]*\d+/i, "").trim());
 }
 async function lista(folder) {
   try { return await fs.readdir(folder, { withFileTypes: true }); }
@@ -117,7 +117,7 @@ async function main() {
 
     // Nel vecchio archivio i PDF potevano trovarsi direttamente sotto Preventivi.
     for (const entry of await lista(sourcePreventivi)) {
-      if (entry.isFile() && entry.name.toUpperCase().startsWith(base.toUpperCase() + "-") && /\\.pdf$/i.test(entry.name)) {
+      if (entry.isFile() && entry.name.toUpperCase().startsWith(base.toUpperCase() + "-") && /\.pdf$/i.test(entry.name)) {
         await copiaFile(path.join(sourcePreventivi, entry.name), path.join(quoteDest, "Preventivi", entry.name));
       }
     }
@@ -141,12 +141,12 @@ async function main() {
         const sottocartella = mapping[entry.name.toLowerCase()] ? "" : entry.name;
         await copiaAlbero(oldPath, path.join(quoteDest, destinazioneTipo, sottocartella));
       } else if (entry.isFile()) {
-        const tipo = /\\.pdf$/i.test(entry.name) && entry.name.toUpperCase().startsWith(base.toUpperCase()) ? "Preventivi" : "Allegati";
+        const tipo = /\.pdf$/i.test(entry.name) && entry.name.toUpperCase().startsWith(base.toUpperCase()) ? "Preventivi" : "Allegati";
         await copiaFile(oldPath, path.join(quoteDest, tipo, entry.name));
       }
     }
   }
-  process.stdout.write(JSON.stringify({ modalità: esegui ? "COPIA" : "ANTEPRIMA", origine, destinazione, ...stats }, null, 2) + "\\n");
+  process.stdout.write(JSON.stringify({ modalità: esegui ? "COPIA" : "ANTEPRIMA", origine, destinazione, ...stats }, null, 2) + "\n");
   if (stats.conflitti.length) process.exitCode = 2;
 }
 try { await main(); }
