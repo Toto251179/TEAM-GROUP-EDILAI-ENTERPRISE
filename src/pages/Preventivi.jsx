@@ -393,12 +393,12 @@ function generaNumeroPreventivo(preventivi) {
 
 function formatNumeroPreventivo(numero) {
   const valore = String(numero || "").trim();
-  const match = valore.match(/PREV-(?:\d{4}-)?(\d+)/);
+  const match = valore.match(/\b(PREV-\d+(?:[-/]\d+)?)\b/i);
   if (!match) return valore;
 
   const revisioneTrovata = valore.match(/\bRev[._\s-]*(\d+)/i)?.[1];
   const revisione = revisioneTrovata && revisioneTrovata.length <= 2 ? revisioneTrovata : "00";
-  return `PREV-${match[1]} -Rev${String(revisione).padStart(2, "0")}`;
+  return `${match[1].toUpperCase()} -Rev${String(revisione).padStart(2, "0")}`;
 }
 
 function formatIndirizzoCompleto(indirizzo) {
