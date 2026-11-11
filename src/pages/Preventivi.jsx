@@ -1756,6 +1756,24 @@ function Preventivi() {
         ),
       },
       {
+        field: "archivioSync",
+        headerName: "Archivio",
+        minWidth: 150,
+        sortable: false,
+        renderCell: (params) => {
+          const stato = params.value?.stato;
+          return (
+            <Chip
+              size="small"
+              label={stato === "SINCRONIZZATO" ? "Sincronizzato" : stato === "DA_VERIFICARE" ? "Da verificare" : "Non verificato"}
+              color={stato === "SINCRONIZZATO" ? "success" : stato === "DA_VERIFICARE" ? "warning" : "default"}
+              variant={stato ? "filled" : "outlined"}
+              title={params.value?.messaggio || "Archivio non ancora verificato"}
+            />
+          );
+        },
+      },
+      {
         field: "dataFormattata",
         headerName: "Data",
         minWidth: 120,
