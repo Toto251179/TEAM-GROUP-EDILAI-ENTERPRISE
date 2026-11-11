@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs/promises";
 import { query } from "../config/db.js";
 import { env } from "../config/env.js";
 
@@ -75,4 +76,16 @@ export async function risolviRadiciArchiviDocumentali() {
   }
 
   return roots;
+}
+
+/** Riutilizza CLIENTI/Clienti già presente: evita una seconda radice su Linux. */
+export async function risolviCartellaClientiArchivio(root) {
+  try {
+    const entries = await fs.readdir(root, { withFileTypes: true });
+    const esistente = entries.find((entry) => entry.isDirectory() && entry.name.toUpperCase() === "CLIENTI");
+    if (esistente) return path.join(root, esistente.name);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  return path.join(root, "CLIENTI");
 }
