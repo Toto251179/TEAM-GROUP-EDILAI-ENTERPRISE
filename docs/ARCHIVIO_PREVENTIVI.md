@@ -19,6 +19,36 @@ La cartella identificativa del lavoro viene creata direttamente dentro il condom
 quando si archivia un PDF o si richiede la cartella di un preventivo.
 Le revisioni dello stesso numero rimangono insieme.
 
+## Sincronizzazione immediata alla creazione e modifica
+
+Il salvataggio di un preventivo (POST `/api/preventivi`) e le modifiche (PUT
+`/api/preventivi/:id`) generano immediatamente il PDF e lo salvano nella
+cartella della relativa commessa, senza premere `Archivia PDF`.
+
+Anche l'accettazione e l'azione di archiviazione manuale richiamano la
+sincronizzazione. Le revisioni PDF conservano il loro numero; un nuovo
+salvataggio della **stessa** revisione aggiorna il PDF omonimo.
+
+La cartella principale è definita da `archivePath` in **Impostazioni >
+Configurazione Sistema > Archivio Preventivi**. Nella stessa schermata si
+possono inserire ulteriori `archiveMirrors`, uno per riga, da mantenere
+allineati. In alternativa, il backend supporta `ARCHIVE_MIRROR_DIRS`
+(percorso multiplo delimitato da punto e virgola).
+
+Sono sincronizzate automaticamente **le destinazioni espressamente
+configurate e raggiungibili dal backend**, non cartelle a cui il server non
+ha accesso. Ogni destinazione ha la medesima struttura
+`Clienti/<cliente>/<lavoro>/Preventivi/<PDF>` e le altre tre cartelle.
+
+Le API di creazione, modifica e accettazione includono `archivioSync`,
+con il risultato per ogni destinazione. Se un archivio non è raggiungibile,
+il preventivo rimane salvato in PostgreSQL; il gestionale mostra
+`DA_VERIFICARE` e non dichiara la sincronizzazione riuscita. Per riprovare
+è disponibile `POST /api/preventivi/:id/sincronizza-archivi`.
+
+L'avvio del backend non retro-sincronizza automaticamente preventivi vecchi:
+per quelli è prevista la procedura di migrazione già documentata sotto.
+
 ## Percorso di destinazione
 
 Non inserire nel codice un percorso immaginato. Identificare prima la cartella
