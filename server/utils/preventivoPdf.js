@@ -1,10 +1,11 @@
 import fs from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { env } from "../config/env.js";
 import { risolviRootArchivioDocumenti, risolviRadiciArchiviDocumentali } from "./archivioRoot.js";
+import { pubblicaPdfConStorico } from "./pdfSuperati.js";
 import {
   getTipoRiga,
   getUnitaRiga,
@@ -641,6 +642,7 @@ async function assicuraStrutturaPreventivo(clienteFolderPath, preventivo) {
   );
   const sottoCartelle = ["Analisi dei costi", "Allegati", "Preventivi", "Consuntivi"];
   await Promise.all(sottoCartelle.map((nome) => ensureDir(path.join(folderPath, nome))));
+  await ensureDir(path.join(folderPath, "Preventivi", "Superati"));
   return { folderPath, sottoCartelle };
 }
 
@@ -656,19 +658,12 @@ async function salvaPdfPreventivoInRadice(preventivo, clientiArchivio, rootOutpu
   const fileName = `${safeFileName(`${base}-${revisione}`)}.pdf`;
   const filePath = path.join(folderPath, "Preventivi", fileName);
 
-  // Scrittura atomica: il PDF pubblicato non risulta mai parziale in caso
-  // di errore di rete o interruzione mentre viene salvato.
-  const temporaneo = path.join(path.dirname(filePath), `.${fileName}.${randomUUID()}.tmp`);
-  try {
-    await fs.writeFile(temporaneo, buffer, { flag: "wx" });
-    await fs.rename(temporaneo, filePath);
-  } finally {
-    await fs.unlink(temporaneo).catch(() => {});
-  }
+  const storico = await pubblicaPdfConStorico({ filePath, buffer, base });
   return {
     buffer, fileName, filePath, rootPath: rootOutputDir, clientiRoot,
     clienteFolderName: path.basename(clienteFolderPath), clienteFolderPath,
     folderName: path.basename(folderPath), folderPath, sottoCartelle,
+    storico,
   };
 }
 
@@ -679,10 +674,57 @@ export async function archiviaPdfPreventivo(preventivo, clientiArchivio = [], ou
   return salvaPdfPreventivoInRadice(preventivo, clientiArchivio, rootOutputDir, buffer);
 }
 
+/**
+ * Impronta del contenuto effettivo del preventivo, non dei byte PDF
+ * (jsPDF può generare ID diversi per PDF identici).
+ */
+export function improntaContenutoPreventivo(preventivo, clientiArchivio = []) {
+  const righe = (Array.isArray(preventivo.righe) ? preventivo.righe : []).map((riga) => ({
+    tipoRiga: getTipoRiga(riga),
+    descrizione: riga.descrizione || "",
+    codice: riga.codice || "",
+    unita: riga.unita || "",
+    partiUguali: riga.partiUguali ?? riga.parti_uguali ?? null,
+    lunghezza: riga.lunghezza ?? null,
+    larghezza: riga.larghezza ?? null,
+    altezzaPeso: riga.altezzaPeso ?? riga.altezza_peso ?? null,
+    quantita: riga.quantita ?? null,
+    prezzoUnitario: riga.prezzoUnitario ?? null,
+    importoLordo: riga.importoLordo ?? null,
+    importo: riga.importo ?? null,
+    totale: riga.totale ?? null,
+    sconto: riga.sconto ?? null,
+    mostraSubtotaleCapitolo: Boolean(riga.mostraSubtotaleCapitolo ?? riga.mostra_subtotale_capitolo),
+  }));
+  const contenuto = {
+    numero: preventivo.numero || "",
+    data: preventivo.data || "",
+    clienteNome: getClienteNome(preventivo, clientiArchivio),
+    clienteVia: getClienteVia(preventivo, clientiArchivio),
+    clienteCode: getClienteCode(preventivo, clientiArchivio),
+    oggetto: getOggettoPreventivo(preventivo),
+    lordo: preventivo.lordo ?? null,
+    sconto: preventivo.sconto ?? null,
+    imponibile: preventivo.imponibile ?? null,
+    totale: preventivo.totale ?? null,
+    ivaAliquota: preventivo.ivaAliquota ?? preventivo.ivaPercentuale ?? null,
+    righe,
+  };
+  return createHash("sha256").update(JSON.stringify(contenuto)).digest("hex");
+}
+
 /** Archivia immediatamente in tutte le radici esplicitamente configurate. */
 export async function sincronizzaPdfPreventivoArchivi(preventivo, clientiArchivio = []) {
   const radici = await risolviRadiciArchiviDocumentali();
-  const buffer = await generaPdfPreventivoBuffer(preventivo, clientiArchivio);
+  const impronta = improntaContenutoPreventivo(preventivo, clientiArchivio);
+  let buffer;
+  // Riusa il PDF corrente quando il contenuto gestionale non è cambiato,
+  // così una nuova generazione tecnica non produce falsi "superati".
+  if (preventivo.archivioSync?.impronta === impronta) {
+    const vecchio = await trovaPdfPreventivoArchiviato(preventivo, clientiArchivio, radici[0]);
+    if (vecchio.exists) buffer = await fs.readFile(vecchio.filePath);
+  }
+  if (!buffer) buffer = await generaPdfPreventivoBuffer(preventivo, clientiArchivio);
   const risultati = [];
   for (const [index, root] of radici.entries()) {
     try {
@@ -699,6 +741,7 @@ export async function sincronizzaPdfPreventivoArchivi(preventivo, clientiArchivi
   return {
     ok: risultati.every((risultato) => risultato.ok),
     principale: risultati[0],
+    impronta,
     destinazioni: risultati,
   };
 }
