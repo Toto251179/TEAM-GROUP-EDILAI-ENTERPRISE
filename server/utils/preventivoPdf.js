@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { env } from "../config/env.js";
-import { risolviRootArchivioDocumenti } from "./archivioRoot.js";
+import { risolviRootArchivioDocumenti, risolviRadiciArchiviDocumentali } from "./archivioRoot.js";
 import {
   getTipoRiga,
   getUnitaRiga,
@@ -643,8 +644,7 @@ async function assicuraStrutturaPreventivo(clienteFolderPath, preventivo) {
   return { folderPath, sottoCartelle };
 }
 
-export async function archiviaPdfPreventivo(preventivo, clientiArchivio = [], outputDir = env.preventivi.outputDir) {
-  const rootOutputDir = await resolvePreventiviOutputDir(outputDir);
+async function salvaPdfPreventivoInRadice(preventivo, clientiArchivio, rootOutputDir, buffer) {
   const { base, revisione } = parseNumeroRevisione(preventivo.numero);
   const clienteNome = getClienteNome(preventivo, clientiArchivio) || "CLIENTE";
   const clienteCode = getClienteCode(preventivo, clientiArchivio) || "SENZA-ID";
@@ -655,12 +655,51 @@ export async function archiviaPdfPreventivo(preventivo, clientiArchivio = [], ou
   const { folderPath, sottoCartelle } = await assicuraStrutturaPreventivo(clienteFolderPath, preventivo);
   const fileName = `${safeFileName(`${base}-${revisione}`)}.pdf`;
   const filePath = path.join(folderPath, "Preventivi", fileName);
-  const buffer = await generaPdfPreventivoBuffer(preventivo, clientiArchivio);
-  await fs.writeFile(filePath, buffer);
+
+  // Scrittura atomica: il PDF pubblicato non risulta mai parziale in caso
+  // di errore di rete o interruzione mentre viene salvato.
+  const temporaneo = path.join(path.dirname(filePath), `.${fileName}.${randomUUID()}.tmp`);
+  try {
+    await fs.writeFile(temporaneo, buffer, { flag: "wx" });
+    await fs.rename(temporaneo, filePath);
+  } finally {
+    await fs.unlink(temporaneo).catch(() => {});
+  }
   return {
     buffer, fileName, filePath, rootPath: rootOutputDir, clientiRoot,
     clienteFolderName: path.basename(clienteFolderPath), clienteFolderPath,
     folderName: path.basename(folderPath), folderPath, sottoCartelle,
+  };
+}
+
+/** Archivia manualmente il PDF nella cartella principale; compatibile con API esistenti. */
+export async function archiviaPdfPreventivo(preventivo, clientiArchivio = [], outputDir = env.preventivi.outputDir) {
+  const rootOutputDir = await resolvePreventiviOutputDir(outputDir);
+  const buffer = await generaPdfPreventivoBuffer(preventivo, clientiArchivio);
+  return salvaPdfPreventivoInRadice(preventivo, clientiArchivio, rootOutputDir, buffer);
+}
+
+/** Archivia immediatamente in tutte le radici esplicitamente configurate. */
+export async function sincronizzaPdfPreventivoArchivi(preventivo, clientiArchivio = []) {
+  const radici = await risolviRadiciArchiviDocumentali();
+  const buffer = await generaPdfPreventivoBuffer(preventivo, clientiArchivio);
+  const risultati = [];
+  for (const [index, root] of radici.entries()) {
+    try {
+      const archivio = await salvaPdfPreventivoInRadice(preventivo, clientiArchivio, root, buffer);
+      risultati.push({ ok: true, principale: index === 0, root, archivio });
+    } catch (error) {
+      risultati.push({
+        ok: false, principale: index === 0, root,
+        codiceErrore: error.code || "ARCHIVIO_ERRORE",
+        messaggio: error.message,
+      });
+    }
+  }
+  return {
+    ok: risultati.every((risultato) => risultato.ok),
+    principale: risultati[0],
+    destinazioni: risultati,
   };
 }
 
