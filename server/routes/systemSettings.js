@@ -6,6 +6,8 @@ import path from "node:path";
 import { query } from "../config/db.js";
 import { env } from "../config/env.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { risolviRootArchivioDocumenti } from "../utils/archivioRoot.js";
+import { riordinaArchivio } from "../../scripts/riordinaCartellePreventivi.mjs";
 
 const router = Router();
 const SETTINGS_KEY = "system";
@@ -216,6 +218,29 @@ router.post("/test-google-maps", asyncHandler(async (req, res) => {
   const log = { ok, message: ok ? "Google Maps configurato correttamente" : body.error_message || body.status, date: new Date().toISOString() };
   await writeSettings({ ...data, logs: { ...(data.logs || {}), googleMaps: log } });
   res.status(ok ? 200 : 400).json(log);
+}));
+
+/**
+ * Corregge le cartelle già esistenti. L'anteprima non modifica nulla.
+ * L'esecuzione richiede un'azione esplicita e crea copie di sicurezza
+ * in una cartella sorella dell'archivio, mai dentro la radice originale.
+ */
+router.post("/riordina-preventivi", asyncHandler(async (req, res) => {
+  const esegui = req.body?.esegui === true;
+  if (esegui && req.body?.conferma !== "RIORDINA") {
+    return res.status(400).json({ code: "CONFERMA_RICHIESTA", message: "Confermare esplicitamente il riordino dei preventivi." });
+  }
+  const root = await risolviRootArchivioDocumenti();
+  const suffisso = new Date().toISOString().replace(/[:.]/g, "-") + "-" + crypto.randomUUID().slice(0, 8);
+  const backup = esegui ? path.join(path.dirname(root), "BACKUP_TEAMGROUP_PREVENTIVI_" + suffisso) : "";
+  const report = await riordinaArchivio({ radice: root, backup, esegui });
+  res.json({
+    ...report,
+    backup,
+    message: esegui
+      ? "Riordino terminato. Verificare i conflitti e le cartelle ancora contenenti documenti."
+      : "Anteprima completata: nessuna cartella o documento è stato modificato.",
+  });
 }));
 
 router.post("/test-archive", asyncHandler(async (req, res) => {
