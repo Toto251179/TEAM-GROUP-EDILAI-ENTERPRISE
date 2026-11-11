@@ -6,7 +6,7 @@ import path from "node:path";
 import { query } from "../config/db.js";
 import { createCrudRepository } from "../utils/crud.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { archiviaPdfPreventivo, assicuraCartellaPreventiviCliente, trovaPdfPreventivoArchiviato } from "../utils/preventivoPdf.js";
+import { archiviaPdfPreventivo, sincronizzaPdfPreventivoArchivi, assicuraCartellaPreventiviCliente, trovaPdfPreventivoArchiviato } from "../utils/preventivoPdf.js";
 import {
   calcolaImportoLordoRiga,
   calcolaImportoRiga,
@@ -416,6 +416,60 @@ async function getPreventivoCompleto(id) {
   };
 }
 
+
+/**
+ * Collegata ai POST/PUT dei preventivi: non restituisce "sincronizzato"
+ * prima che i PDF siano stati effettivamente scritti su ogni destinazione.
+ * Un errore del filesystem non deve far perdere il salvataggio PostgreSQL.
+ */
+async function sincronizzaArchivioDopoSalvataggio(preventivo) {
+  try {
+    const cliente = await getClienteCompleto(preventivo.clienteId);
+    const risultati = await sincronizzaPdfPreventivoArchivi(preventivo, cliente ? [cliente] : []);
+    if (risultati.principale?.ok) {
+      try {
+        await salvaArchivioPreventivo(preventivo.id, risultati.principale.archivio);
+      } catch (error) {
+        risultati.principale.ok = false;
+        risultati.principale.codiceErrore = error.code || "ARCHIVIO_DB_ERRORE";
+        risultati.principale.messaggio = `PDF creato ma percorso non registrato: ${error.message}`;
+        risultati.ok = false;
+        console.error("Archivio: errore registrazione percorso PDF", preventivo.id, error);
+      }
+    }
+    const destinazioni = risultati.destinazioni.map((risultato) => ({
+      ok: risultato.ok,
+      principale: risultato.principale,
+      root: risultato.root,
+      filePath: risultato.archivio?.filePath || null,
+      codiceErrore: risultato.codiceErrore || null,
+      messaggio: risultato.messaggio || null,
+    }));
+    const ok = risultati.ok && Boolean(risultati.principale?.ok);
+    if (!ok) console.error("Sincronizzazione archivi preventivo incompleta", { preventivoId: preventivo.id, destinazioni });
+    return {
+      ok,
+      stato: ok ? "SINCRONIZZATO" : "DA_VERIFICARE",
+      messaggio: ok
+        ? "Preventivo aggiornato in tutte le cartelle esterne configurate."
+        : "Preventivo salvato nel gestionale, ma uno o più archivi non sono stati aggiornati. Verificare le destinazioni segnalate.",
+      data: new Date().toISOString(),
+      destinazioni,
+    };
+  } catch (error) {
+    console.error("Sincronizzazione archivi preventivo non riuscita", preventivo.id, error);
+    return {
+      ok: false,
+      stato: "DA_VERIFICARE",
+      messaggio: "Preventivo salvato nel gestionale, ma la sincronizzazione dell'archivio non è riuscita.",
+      errore: error.message,
+      codiceErrore: error.code || "ARCHIVIO_ERRORE",
+      data: new Date().toISOString(),
+      destinazioni: [],
+    };
+  }
+}
+
 function generaCodiceElencoPrezzi(riga) {
   if (riga.codice) return String(riga.codice).trim();
 
@@ -726,7 +780,9 @@ router.post("/", asyncHandler(async (req, res) => {
 
   await salvaIvaAliquota(preventivo.id, totali.ivaPercentuale);
   await salvaRighe(preventivo.id, righe);
-  res.status(201).json(await getPreventivoCompleto(preventivo.id));
+  const completo = await getPreventivoCompleto(preventivo.id);
+  const archivioSync = await sincronizzaArchivioDopoSalvataggio(completo);
+  res.status(201).json({ ...completo, archivioSync });
 }));
 
 router.put("/:id", asyncHandler(async (req, res) => {
@@ -752,7 +808,16 @@ router.put("/:id", asyncHandler(async (req, res) => {
   if (ivaAliquota !== undefined) await salvaIvaAliquota(req.params.id, ivaAliquota);
   if (righe) await salvaRighe(req.params.id, righe);
 
-  res.json(await getPreventivoCompleto(req.params.id));
+  const completo = await getPreventivoCompleto(req.params.id);
+  const archivioSync = await sincronizzaArchivioDopoSalvataggio(completo);
+  res.json({ ...completo, archivioSync });
+}));
+
+// Recupero manuale di un archivio rimasto non aggiornato dopo un problema di rete.
+router.post("/:id/sincronizza-archivi", asyncHandler(async (req, res) => {
+  const preventivo = await getPreventivoCompleto(req.params.id);
+  if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
+  res.json({ preventivoId: preventivo.id, archivioSync: await sincronizzaArchivioDopoSalvataggio(preventivo) });
 }));
 
 router.delete("/:id", asyncHandler(async (req, res) => {
