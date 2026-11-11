@@ -39,7 +39,8 @@ const repository = createCrudRepository({
 });
 
 const router = Router();
-const SOTTOCARTELLE_CLIENTE = ["CANTIERI", "CHIAMATE", "RAPPORTINI", "FOTO", "DOCUMENTI"];
+// Le cartelle documentali appartengono alle singole commesse/preventivi.
+const SOTTOCARTELLE_CLIENTE = [];
 
 function toCamel(row) {
   return Object.fromEntries(
