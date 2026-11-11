@@ -453,6 +453,8 @@ async function sincronizzaArchivioDopoSalvataggio(preventivo) {
       principale: risultato.principale,
       root: risultato.root,
       filePath: risultato.archivio?.filePath || null,
+      superati: risultato.archivio?.storico?.superati?.map((file) => path.basename(file)) || [],
+      invariato: risultato.archivio?.storico?.invariato || false,
       codiceErrore: risultato.codiceErrore || null,
       messaggio: risultato.messaggio || null,
     }));
@@ -465,6 +467,7 @@ async function sincronizzaArchivioDopoSalvataggio(preventivo) {
         ? "Preventivo aggiornato in tutte le cartelle esterne configurate."
         : "Preventivo salvato nel gestionale, ma uno o più archivi non sono stati aggiornati. Verificare le destinazioni segnalate.",
       data: new Date().toISOString(),
+      impronta: risultati.impronta,
       destinazioni,
     });
   } catch (error) {
