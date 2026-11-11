@@ -89,7 +89,9 @@ async function salvaConStorico({ filePath, buffer, base }) {
 
 /** Serializza le scritture concorrenti allo stesso documento nello stesso processo Node. */
 export async function pubblicaPdfConStorico(options) {
-  const chiave = path.resolve(options.filePath).toLowerCase();
+  // Si blocca l'intera cartella Preventivi, non soltanto il nome della
+  // revisione: due salvataggi concorrenti non devono spostarsi a vicenda.
+  const chiave = path.dirname(path.resolve(options.filePath)).toLowerCase();
   const precedente = inCorso.get(chiave) || Promise.resolve();
   const attuale = precedente.catch(() => {}).then(() => salvaConStorico(options));
   inCorso.set(chiave, attuale);
