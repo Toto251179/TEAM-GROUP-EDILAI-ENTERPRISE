@@ -974,10 +974,17 @@ router.post("/:id/archivia-pdf", asyncHandler(async (req, res) => {
   if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
 
   const archivioSync = await sincronizzaArchivioDopoSalvataggio(preventivo);
+  const principale = archivioSync.destinazioni.find((item) => item.principale);
   res.json({
     success: archivioSync.ok,
     message: archivioSync.messaggio,
     preventivo,
+    archivio: principale?.filePath ? {
+      rootPath: principale.root,
+      fileName: path.basename(principale.filePath),
+      folderName: path.basename(path.dirname(path.dirname(principale.filePath))),
+      folderPath: path.dirname(path.dirname(principale.filePath)),
+    } : null,
     archivioSync,
   });
 }));
