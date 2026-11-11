@@ -1002,7 +1002,11 @@ function Preventivi() {
 
     try {
       const risposta = await api.post(`/preventivi/${preventivo.id}/archivia-pdf`, {});
-      setMessaggio(risposta.message || "Preventivo archiviato correttamente.");
+      if (risposta.archivioSync?.ok) {
+        setMessaggio(risposta.message || "Preventivo archiviato correttamente.");
+      } else {
+        setErrore(risposta.archivioSync?.messaggio || "Non tutte le cartelle esterne sono aggiornate.");
+      }
       await aggiornaVistaDaDatabase();
       return risposta;
     } catch (error) {
@@ -1149,9 +1153,17 @@ function Preventivi() {
         return;
       }
 
-      await archiviaPreventivoPdf(salvato);
       const { preventiviDb } = await aggiornaVistaDaDatabase();
       resetForm(preventiviDb);
+      if (salvato.archivioSync?.ok) {
+        setMessaggio("Preventivo salvato e aggiornato in tutte le cartelle esterne configurate.");
+      } else {
+        const fallite = (salvato.archivioSync?.destinazioni || [])
+          .filter((item) => !item.ok)
+          .map((item) => item.root)
+          .join(", ");
+        setErrore(`${salvato.archivioSync?.messaggio || "Preventivo salvato, ma archivi da verificare."}${fallite ? ` Destinazioni: ${fallite}` : ""}`);
+      }
     } catch (error) {
       await aggiornaVistaDaDatabase().catch(() => {});
       setErrore(error.message);
@@ -1184,8 +1196,13 @@ function Preventivi() {
         return;
       }
 
-      await api.put(`/preventivi/${preventivo.id}`, { stato });
+      const aggiornato = await api.put(`/preventivi/${preventivo.id}`, { stato });
       await aggiornaVistaDaDatabase();
+      if (aggiornato.archivioSync?.ok) {
+        setMessaggio("Stato aggiornato e PDF sincronizzato.");
+      } else {
+        setErrore(aggiornato.archivioSync?.messaggio || "Stato salvato; archivio da verificare.");
+      }
     } catch (error) {
       setErrore(error.message);
     }
