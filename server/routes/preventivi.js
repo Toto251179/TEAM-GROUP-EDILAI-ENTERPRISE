@@ -984,31 +984,12 @@ router.post("/:id/archivia-pdf", asyncHandler(async (req, res) => {
   const preventivo = await getPreventivoCompleto(req.params.id);
   if (!preventivo) return res.status(404).json({ message: "Preventivo non trovato" });
 
-  const cliente = await getClienteCompleto(preventivo.clienteId);
-  let archivio;
-  try {
-    archivio = await archiviaPdfPreventivo(preventivo, cliente ? [cliente] : undefined);
-    await salvaArchivioPreventivo(req.params.id, archivio);
-  } catch (error) {
-    return res.status(500).json({
-      message: "Archiviazione preventivo non riuscita.",
-      percorsoCercato: process.env.PREVENTIVI_OUTPUT_DIR || "",
-      errore: error.message,
-      motivo: error.code || "Errore scrittura file",
-    });
-  }
-
+  const archivioSync = await sincronizzaArchivioDopoSalvataggio(preventivo);
   res.json({
-    message: "Preventivo archiviato correttamente.",
+    success: archivioSync.ok,
+    message: archivioSync.messaggio,
     preventivo,
-    archivio: {
-      rootPath: archivio.rootPath,
-      fileName: archivio.fileName,
-      clienteFolderName: archivio.clienteFolderName,
-      clienteFolderPath: archivio.clienteFolderPath,
-      folderName: archivio.folderName,
-      folderPath: archivio.folderPath,
-    },
+    archivioSync,
   });
 }));
 
@@ -1181,6 +1162,7 @@ router.post("/:id/accetta", asyncHandler(async (req, res) => {
   const preventivoAggiornato = await repository.update(req.params.id, { stato: "Accettato" });
   if (!preventivoAggiornato) return res.status(404).json({ message: "Preventivo non trovato" });
   const preventivo = await getPreventivoCompleto(req.params.id);
+  const archivioSync = await sincronizzaArchivioDopoSalvataggio(preventivo);
 
   const cantiereEsistente = await query(
     "SELECT * FROM cantieri WHERE preventivo_id = $1 LIMIT 1",
@@ -1188,7 +1170,7 @@ router.post("/:id/accetta", asyncHandler(async (req, res) => {
   );
 
   if (cantiereEsistente.rows[0]) {
-    return res.json({ preventivo: await getPreventivoCompleto(req.params.id), cantiere: cantiereEsistente.rows[0] });
+    return res.json({ preventivo: await getPreventivoCompleto(req.params.id), cantiere: cantiereEsistente.rows[0], archivioSync });
   }
 
   const cantiere = await query(
@@ -1198,7 +1180,7 @@ router.post("/:id/accetta", asyncHandler(async (req, res) => {
     [preventivo.id, preventivo.clienteId, preventivo.clienteCode || "", preventivo.descrizione, preventivo.cliente, preventivo.importo],
   );
 
-  res.json({ preventivo: await getPreventivoCompleto(req.params.id), cantiere: cantiere.rows[0] });
+  res.json({ preventivo: await getPreventivoCompleto(req.params.id), cantiere: cantiere.rows[0], archivioSync });
 }));
 
 export default router;
