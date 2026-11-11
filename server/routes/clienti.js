@@ -39,7 +39,7 @@ const repository = createCrudRepository({
 });
 
 const router = Router();
-const SOTTOCARTELLE_CLIENTE = ["PREVENTIVI", "CANTIERI", "CHIAMATE", "RAPPORTINI", "FOTO", "DOCUMENTI"];
+const SOTTOCARTELLE_CLIENTE = ["CANTIERI", "CHIAMATE", "RAPPORTINI", "FOTO", "DOCUMENTI"];
 
 function toCamel(row) {
   return Object.fromEntries(
