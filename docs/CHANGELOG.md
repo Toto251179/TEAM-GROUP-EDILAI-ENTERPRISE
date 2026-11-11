@@ -1,6 +1,19 @@
 # TEAM GROUP EDILAI
 ## CHANGELOG UFFICIALE
 
+## 2026-11-11 — Correzione cartelle preventivi e archivio cliente
+
+- Non vengono più create cartelle generiche direttamente dentro `CLIENTI/<cliente>` quando si crea o si apre la cartella cliente.
+- Cartella CLIENTI riconosciuta anche con maiuscole/minuscole differenti: nessuna radice duplicata.
+- Identificativi preventivo conservati interamente (es. `PREV-253-26`, `PREV-26180`, `PREV-274/26`), allineando frontend, archivio PDF e migrazione.
+- Nuovo riordino sicuro per i PDF già presenti nelle cartelle generiche e alla radice di ogni lavoro: anteprima, backup esterno obbligatorio per esecuzione, verifica copie, blocco dei conflitti.
+- Eliminazione delle sole cartelle generiche vuote. Le cartelle contenenti file non riconosciuti restano intatte.
+- Aggiunto pulsante **Verifica archivio (senza modifiche)** e comando esplicito **Riordina con copia di sicurezza** nelle Impostazioni.
+- Test Node per nomi completi delle commesse, anteprima, spostamento con backup, conflitti e conservazione di file non associati.
+- Nessun intervento eseguito sulle cartelle reali del PC finché la nuova versione non è distribuita.
+
+---
+
 ## 2026-11-11 — Storico preventivi superati
 
 - Aggiunta la sottocartella `Preventivi/Superati` in ogni lavoro.
