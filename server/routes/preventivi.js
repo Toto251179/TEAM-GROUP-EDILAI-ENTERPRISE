@@ -73,6 +73,7 @@ async function ensurePreventivoTotaliSchema() {
       await query("ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS iva_percentuale NUMERIC(5, 2) NOT NULL DEFAULT 22");
       await query("ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS iva_importo NUMERIC(12, 2) NOT NULL DEFAULT 0");
       await query("ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS totale NUMERIC(12, 2) NOT NULL DEFAULT 0");
+      await query("ALTER TABLE preventivi ADD COLUMN IF NOT EXISTS archivio_sync JSONB");
     })();
   }
 
@@ -422,6 +423,16 @@ async function getPreventivoCompleto(id) {
  * prima che i PDF siano stati effettivamente scritti su ogni destinazione.
  * Un errore del filesystem non deve far perdere il salvataggio PostgreSQL.
  */
+async function registraStatoArchivi(preventivoId, stato) {
+  try {
+    await query("UPDATE preventivi SET archivio_sync = $2::jsonb WHERE id = $1", [preventivoId, JSON.stringify(stato)]);
+  } catch (error) {
+    // Una mancata registrazione del log non deve cancellare il preventivo.
+    console.error("Impossibile registrare esito sincronizzazione archivi", preventivoId, error);
+  }
+  return stato;
+}
+
 async function sincronizzaArchivioDopoSalvataggio(preventivo) {
   try {
     const cliente = await getClienteCompleto(preventivo.clienteId);
@@ -447,7 +458,7 @@ async function sincronizzaArchivioDopoSalvataggio(preventivo) {
     }));
     const ok = risultati.ok && Boolean(risultati.principale?.ok);
     if (!ok) console.error("Sincronizzazione archivi preventivo incompleta", { preventivoId: preventivo.id, destinazioni });
-    return {
+    return registraStatoArchivi(preventivo.id, {
       ok,
       stato: ok ? "SINCRONIZZATO" : "DA_VERIFICARE",
       messaggio: ok
@@ -455,10 +466,10 @@ async function sincronizzaArchivioDopoSalvataggio(preventivo) {
         : "Preventivo salvato nel gestionale, ma uno o più archivi non sono stati aggiornati. Verificare le destinazioni segnalate.",
       data: new Date().toISOString(),
       destinazioni,
-    };
+    });
   } catch (error) {
     console.error("Sincronizzazione archivi preventivo non riuscita", preventivo.id, error);
-    return {
+    return registraStatoArchivi(preventivo.id, {
       ok: false,
       stato: "DA_VERIFICARE",
       messaggio: "Preventivo salvato nel gestionale, ma la sincronizzazione dell'archivio non è riuscita.",
@@ -466,7 +477,7 @@ async function sincronizzaArchivioDopoSalvataggio(preventivo) {
       codiceErrore: error.code || "ARCHIVIO_ERRORE",
       data: new Date().toISOString(),
       destinazioni: [],
-    };
+    });
   }
 }
 
