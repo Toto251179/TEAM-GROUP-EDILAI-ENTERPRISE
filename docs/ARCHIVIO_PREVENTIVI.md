@@ -10,8 +10,9 @@
             ├── Analisi dei costi/
             ├── Allegati/
             ├── Preventivi/
-            │   ├── PREV-274-Rev00.pdf
-            │   └── PREV-274-Rev01.pdf
+            │   ├── PREV-274-Rev01.pdf             # documento attuale
+            │   └── Superati/
+            │       └── PREV-274-Rev00_SUPERATO_2026-11-11_15-50-00_a1b2c3d4.pdf
             └── Consuntivi/
 ```
 
@@ -48,6 +49,31 @@ il preventivo rimane salvato in PostgreSQL; il gestionale mostra
 
 L'avvio del backend non retro-sincronizza automaticamente preventivi vecchi:
 per quelli è prevista la procedura di migrazione già documentata sotto.
+
+## Versioni Superate
+
+Al primo salvataggio, il preventivo corrente viene pubblicato in `Preventivi`.
+Ogni successiva modifica **del contenuto del preventivo**, prima di
+pubblicare il nuovo PDF, conserva una copia del precedente in
+`Preventivi/Superati`. Il nome storico include il numero del preventivo,
+la revisione, data/ora (Europe/Rome) e un identificativo univoco.
+
+In `Preventivi` resta una sola versione corrente del PDF generato
+automaticamente; gli altri PDF delle precedenti revisioni vengono
+conservati in `Superati`. I PDF allegati manualmente, con nomi diversi
+dal formato del gestionale, non vengono rimossi.
+
+La modifica viene replicata in ogni archivio esterno configurato,
+mantenendo anche lo storico in ciascuno di essi. Se un archivio
+non è scrivibile, l'operazione viene segnalata come `DA_VERIFICARE`
+senza dichiarare erroneamente completata la sincronizzazione.
+Le copie precedenti vengono salvate e controllate *prima* di
+sostituire il PDF corrente. Se il contenuto non è cambiato, il
+gestionale riutilizza la versione PDF già pubblicata e non crea
+un nuovo file superato solo per effetto della rigenerazione tecnica.
+
+Gli originali esistenti non vengono cancellati durante la migrazione
+iniziale tra i server: quella procedura resta separata.
 
 ## Percorso di destinazione
 
