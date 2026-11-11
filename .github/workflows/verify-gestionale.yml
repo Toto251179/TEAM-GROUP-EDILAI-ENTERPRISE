@@ -6,6 +6,9 @@ on:
       - "server/**"
       - "src/**"
       - "scripts/test-pdfSuperati.mjs"
+      - "scripts/riordinaCartellePreventivi.mjs"
+      - "scripts/test-riordinaCartellePreventivi.mjs"
+      - "scripts/test-identificativiPreventivi.mjs"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/verify-gestionale.yml"
@@ -16,6 +19,9 @@ on:
       - "server/**"
       - "src/**"
       - "scripts/test-pdfSuperati.mjs"
+      - "scripts/riordinaCartellePreventivi.mjs"
+      - "scripts/test-riordinaCartellePreventivi.mjs"
+      - "scripts/test-identificativiPreventivi.mjs"
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/verify-gestionale.yml"
@@ -34,8 +40,11 @@ jobs:
           cache: npm
       - name: Installa dipendenze da lockfile
         run: npm ci
-      - name: Test cartella Superati
-        run: node --test scripts/test-pdfSuperati.mjs
+      - name: Test cartella Superati e riordino preventivi
+        run: |
+          node --test scripts/test-pdfSuperati.mjs
+          node --test scripts/test-identificativiPreventivi.mjs
+          node --test scripts/test-riordinaCartellePreventivi.mjs
       - name: Controlla sintassi backend
         run: |
           node --check server/routes/preventivi.js
@@ -43,5 +52,6 @@ jobs:
           node --check server/utils/archivioRoot.js
           node --check server/utils/preventivoPdf.js
           node --check server/utils/pdfSuperati.js
+          node --check scripts/riordinaCartellePreventivi.mjs
       - name: Compila frontend
         run: npm run build
