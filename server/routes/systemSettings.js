@@ -71,6 +71,7 @@ function normalizeSecret(value) {
 function defaultSettings() {
   return {
     archivePath: env.preventivi.outputDir,
+    archiveMirrors: [],
     excelClienti: { path: process.env.CLIENTI_EXCEL_PATH || "", sheetName: "Foglio1", intervalMinutes: 10, autoSync: false },
     sync: {
       fornitori: { path: "", sheetName: "", intervalMinutes: 10, autoSync: false },
@@ -169,6 +170,18 @@ router.put("/", asyncHandler(async (req, res) => {
   const nextData = {
     ...data,
     archivePath: req.body.archivePath ?? data.archivePath,
+    archiveMirrors: req.body.archiveMirrors === undefined
+      ? (Array.isArray(data.archiveMirrors) ? data.archiveMirrors : [])
+      : (() => {
+          if (!Array.isArray(req.body.archiveMirrors) ||
+              req.body.archiveMirrors.some((value) => typeof value !== "string")) {
+            const error = new Error("archiveMirrors deve essere un elenco di percorsi.");
+            error.status = 400;
+            error.code = "ARCHIVE_MIRRORS_INVALID";
+            throw error;
+          }
+          return [...new Set(req.body.archiveMirrors.map((value) => value.trim()).filter(Boolean))];
+        })(),
     excelClienti: { ...data.excelClienti, ...(req.body.excelClienti || {}) },
     sync: { ...data.sync, ...(req.body.sync || {}) },
     backup: { ...data.backup, ...(req.body.backup || {}) },
