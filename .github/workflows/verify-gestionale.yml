@@ -1,0 +1,47 @@
+name: Verifica gestionale e archivio preventivi
+
+on:
+  pull_request:
+    paths:
+      - "server/**"
+      - "src/**"
+      - "scripts/test-pdfSuperati.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/verify-gestionale.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "server/**"
+      - "src/**"
+      - "scripts/test-pdfSuperati.mjs"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/verify-gestionale.yml"
+
+jobs:
+  verifica:
+    name: Build e storico preventivi
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scarica codice
+        uses: actions/checkout@v4
+      - name: Installa Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Installa dipendenze da lockfile
+        run: npm ci
+      - name: Test cartella Superati
+        run: node --test scripts/test-pdfSuperati.mjs
+      - name: Controlla sintassi backend
+        run: |
+          node --check server/routes/preventivi.js
+          node --check server/routes/systemSettings.js
+          node --check server/utils/archivioRoot.js
+          node --check server/utils/preventivoPdf.js
+          node --check server/utils/pdfSuperati.js
+      - name: Compila frontend
+        run: npm run build
