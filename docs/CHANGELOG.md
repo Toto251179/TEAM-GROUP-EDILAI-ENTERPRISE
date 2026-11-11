@@ -1,6 +1,22 @@
 # TEAM GROUP EDILAI
 ## CHANGELOG UFFICIALE
 
+## 2026-11-11 — Sincronizzazione immediata preventivi e repliche
+
+- Al salvataggio POST o PUT, il PDF viene generato e copiato immediatamente in ogni archivio esterno configurato.
+- Aggiornati anche i percorsi di generazione PDF manuale, archiviazione manuale e accettazione del preventivo.
+- PDF rigenerato una sola volta per operazione, scrittura atomica in ogni cartella; revisione esistente aggiornata con lo stesso nome.
+- Gestione `archiveMirrors` dalle Impostazioni: copie aggiuntive con la medesima struttura per condominio e lavoro.
+- Esito dettagliato per ogni cartella nel campo `archivioSync` delle risposte API e persistito in PostgreSQL.
+- Aggiunta colonna `Archivio` nell'elenco preventivi: Sincronizzato / Da verificare / Non verificato.
+- Eliminata la seconda archiviazione PDF dopo Salva nella pagina Preventivi; esito di sincronizzazione mostrato anche in caso di errore.
+- Disponibile il recupero con `POST /api/preventivi/:id/sincronizza-archivi`.
+- Verifica statica del codice backend: sintassi valida.
+- Non eseguiti test con server Windows, database reale, copie esterne e build frontend: modifiche ancora in branch e non distribuite.
+- La sincronizzazione aggiorna i PDF e crea le sottocartelle, senza esportare automaticamente analisi costi o consuntivi che esistono soltanto nel database.
+
+---
+
 ## 2026-11-11 — Correzione gerarchia cartella del lavoro (richiesta utente)
 
 - Eliminato **dalla nuova struttura** il livello intermedio `Clienti/<cliente>/Preventivi`.
