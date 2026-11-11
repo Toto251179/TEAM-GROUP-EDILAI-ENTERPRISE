@@ -86,6 +86,42 @@ e Apri cartella condividono questa stessa impostazione.
 Il backend deve avere permessi di lettura e scrittura su quella cartella.
 Non usare un percorso locale del PC utente se il backend gira su un altro host.
 
+## Correzione cartelle superflue e PDF nel posto sbagliato
+
+La cartella del cliente non deve più ricevere sottocartelle generiche create
+automaticamente (es. `FOTO`, `DOCUMENTI`, `Preventivo`), perché tutti i
+documenti del preventivo devono stare all'interno del lavoro:
+`CLIENTI/<cliente>/PREV-<identificativo> - <oggetto>/Preventivi/`.
+Sotto ogni lavoro rimangono le quattro cartelle richieste:
+`Analisi dei costi`, `Allegati`, `Preventivi` (con `Superati`) e `Consuntivi`.
+
+È stato corretto anche il riconoscimento dell'intero identificativo del
+preventivo: `PREV-253-26` non deve più essere interpretato come
+`PREV-253`; `PREV-26180` deve rimanere `PREV-26180`.
+
+**Per i documenti già archiviati**, dopo aver installato l'aggiornamento,
+andare in **Impostazioni → Configurazione Sistema → Archivio Preventivi**:
+1. usare **Verifica archivio (senza modifiche)** per visualizzare
+   l'anteprima dei PDF collocati erroneamente;
+2. controllare l'elenco dei conflitti, degli elementi non riconosciuti e
+   delle cartelle da verificare;
+3. premere **Riordina con copia di sicurezza** solo dopo aver verificato
+   che l'archivio principale sia quello desiderato.
+
+Il riordino crea automaticamente una cartella backup **esterna alla radice
+originale**, accanto all'archivio, e verifica ogni copia prima di rimuovere
+la sorgente. Per motivi di sicurezza non sovrascrive i file differenti
+con lo stesso nome e non elimina cartelle che contengono file non
+riconosciuti. Si eliminano **solo le cartelle generiche diventate vuote**.
+
+Per utilizzo da riga di comando:
+```bash
+node scripts/riordinaCartellePreventivi.mjs --radice "PERCORSO_ARCHIVIO"
+node scripts/riordinaCartellePreventivi.mjs --radice "PERCORSO_ARCHIVIO" --backup "PERCORSO_BACKUP_ESTERN0" --esegui
+```
+Il riordino non installa automaticamente modifiche sul PC: va eseguito
+dal gestionale aggiornato o con il comando nel progetto locale.
+
 ## Recupero dei documenti già archiviati
 
 Eseguire prima un backup dei documenti e del database PostgreSQL.
