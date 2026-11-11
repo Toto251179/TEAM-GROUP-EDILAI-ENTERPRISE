@@ -1,6 +1,19 @@
 # TEAM GROUP EDILAI
 ## CHANGELOG UFFICIALE
 
+## 2026-11-11 — Storico preventivi superati
+
+- Aggiunta la sottocartella `Preventivi/Superati` in ogni lavoro.
+- Prima della sostituzione del PDF attuale, il sistema salva e verifica una copia del precedente nella cartella Superati con data, ora e codice univoco.
+- In caso di cambio revisione, i PDF delle vecchie revisioni generate automaticamente vengono spostati nello storico e non restano tra i preventivi correnti.
+- I PDF allegati manualmente non vengono toccati.
+- In caso di errore nel salvataggio dello storico, il PDF attuale non viene sostituito e la sincronizzazione viene segnalata da verificare.
+- L'impronta dei dati effettivi del preventivo, registrata in `archivio_sync`, permette di evitare falsi aggiornamenti causati dalla rigenerazione tecnica del PDF.
+- Storico replicato anche negli archivi esterni configurati. Aggiornata la migrazione per mantenere eventuali cartelle Superati.
+- Aggiunto test Node `scripts/test-pdfSuperati.mjs` (esecuzione ancora da verificare su ambiente server).
+
+---
+
 ## 2026-11-11 — Sincronizzazione immediata preventivi e repliche
 
 - Al salvataggio POST o PUT, il PDF viene generato e copiato immediatamente in ogni archivio esterno configurato.
