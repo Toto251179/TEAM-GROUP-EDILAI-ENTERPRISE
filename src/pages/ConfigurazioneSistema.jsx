@@ -33,6 +33,7 @@ function ConfigurazioneSistema() {
   const salva = async (extra = {}) => {
     const body = {
       archivePath: form.archivePath,
+      archiveMirrors: Array.isArray(form.archiveMirrors) ? form.archiveMirrors : [],
       excelClienti: form.excelClienti,
       sync: form.sync,
       backup: form.backup,
@@ -117,6 +118,14 @@ function ConfigurazioneSistema() {
           <label>Percorso cartella principale</label>
           <input value={form.archivePath || ""} onChange={(event) => update("archivePath", event.target.value)} />
           <p>Percorso attuale: {settings.archivePath}</p>
+          <label>Cartelle esterne aggiuntive da aggiornare automaticamente (una per riga)</label>
+          <textarea
+            rows={3}
+            placeholder={"Esempio: E:\\ARCHIVIO TEAMGROUP\\n\\\\SERVER\\Condivisione"}
+            value={(form.archiveMirrors || []).join("\n")}
+            onChange={(event) => update("archiveMirrors", event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean))}
+          />
+          <p>Ogni volta che salvi o modifichi un preventivo, il PDF sarà aggiornato nella cartella principale e in tutte queste copie, mantenendo la stessa struttura per condominio e lavoro.</p>
           <p>Ultimo PDF archiviato: {settings.logs?.archive?.lastPdf || "-"}</p>
           <p>Data ultimo salvataggio: {settings.logs?.archive?.date ? new Date(settings.logs.archive.date).toLocaleString("it-IT") : "-"}</p>
           <div className="config-actions">
