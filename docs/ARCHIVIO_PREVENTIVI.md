@@ -6,17 +6,16 @@
 <cartella originale TEAMGROUP SERVER>/
 └── Clienti/
     └── ID02201 - CONDOMINIO QUADRIFOGLIO/
-        └── Preventivi/
-            └── PREV-274 - Opere edili/
-                ├── Analisi dei costi/
-                ├── Allegati/
-                ├── Preventivi/
-                │   ├── PREV-274-Rev00.pdf
-                │   └── PREV-274-Rev01.pdf
-                └── Consuntivi/
+        └── PREV-274 - Opere edili/
+            ├── Analisi dei costi/
+            ├── Allegati/
+            ├── Preventivi/
+            │   ├── PREV-274-Rev00.pdf
+            │   └── PREV-274-Rev01.pdf
+            └── Consuntivi/
 ```
 
-Le cartelle per condominio e per singolo preventivo vengono create dal backend
+La cartella identificativa del lavoro viene creata direttamente dentro il condominio, senza la cartella `Preventivi` intermedia. Le cartelle per condominio e per singolo preventivo vengono create dal backend
 quando si archivia un PDF o si richiede la cartella di un preventivo.
 Le revisioni dello stesso numero rimangono insieme.
 
