@@ -141,6 +141,10 @@ async function main() {
       for (const entry of await lista(sourceFolder)) {
         const oldPath = path.join(sourceFolder, entry.name);
         if (entry.isDirectory()) {
+          if (entry.name.toLowerCase() === "superati") {
+            await copiaAlbero(oldPath, path.join(quoteDest, "Preventivi", "Superati"));
+            continue;
+          }
           const destinazioneTipo = mapping[entry.name.toLowerCase()] || "Allegati";
           const sottocartella = mapping[entry.name.toLowerCase()] ? "" : entry.name;
           await copiaAlbero(oldPath, path.join(quoteDest, destinazioneTipo, sottocartella));
