@@ -1,6 +1,16 @@
 # TEAM GROUP EDILAI
 ## CHANGELOG UFFICIALE
 
+## 2026-11-11 — Correzione gerarchia cartella del lavoro (richiesta utente)
+
+- Eliminato **dalla nuova struttura** il livello intermedio `Clienti/<cliente>/Preventivi`.
+- Nuova struttura: `Clienti/<ID - Cliente>/<Numero lavoro - Oggetto>/{Analisi dei costi, Allegati, Preventivi, Consuntivi}`.
+- Adeguati generazione PDF, ricerca file precedenti, comando cartella singolo preventivo e script di migrazione.
+- Non viene piu creata la cartella `PREVENTIVI` direttamente sotto nuovi clienti. Cartelle storiche non eliminate automaticamente.
+- Migrazione fisica degli archivi e test in produzione ancora da eseguire.
+
+---
+
 ## 2026-11-11 — Archivio preventivi per condominio e singolo preventivo (ramo di lavoro)
 
 - Predisposta la struttura `Clienti/<ID - Cliente>/Preventivi/<Numero preventivo - Oggetto>/{Analisi dei costi, Allegati, Preventivi, Consuntivi}`.
