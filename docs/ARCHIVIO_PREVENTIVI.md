@@ -117,7 +117,7 @@ riconosciuti. Si eliminano **solo le cartelle generiche diventate vuote**.
 Per utilizzo da riga di comando:
 ```bash
 node scripts/riordinaCartellePreventivi.mjs --radice "PERCORSO_ARCHIVIO"
-node scripts/riordinaCartellePreventivi.mjs --radice "PERCORSO_ARCHIVIO" --backup "PERCORSO_BACKUP_ESTERN0" --esegui
+node scripts/riordinaCartellePreventivi.mjs --radice "PERCORSO_ARCHIVIO" --backup "PERCORSO_BACKUP_ESTERNO" --esegui
 ```
 Il riordino non installa automaticamente modifiche sul PC: va eseguito
 dal gestionale aggiornato o con il comando nel progetto locale.
