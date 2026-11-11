@@ -1,6 +1,19 @@
 # TEAM GROUP EDILAI
 ## CHANGELOG UFFICIALE
 
+## 2026-11-11 — Archivio preventivi per condominio e singolo preventivo (ramo di lavoro)
+
+- Predisposta la struttura `Clienti/<ID - Cliente>/Preventivi/<Numero preventivo - Oggetto>/{Analisi dei costi, Allegati, Preventivi, Consuntivi}`.
+- PDF delle nuove revisioni archiviati sotto la sottocartella `Preventivi` del singolo preventivo.
+- Mantenuta la ricerca dei PDF nelle cartelle storiche e nel vecchio archivio piatto.
+- Unificata la radice archivio di Clienti, Preventivi e comando Apri cartella con `archivePath` configurato.
+- Aggiunta procedura di migrazione in anteprima predefinita, copia soltanto su richiesta esplicita, senza cancellazioni e senza sovrascritture.
+- **Non eseguita migrazione effettiva su server**: la destinazione reale deve essere identificata e resa accessibile.
+- **Non eseguiti test di backend/PostgreSQL/browser/build** in ambiente operativo: richiedono installazione e dati del server.
+
+---
+
+
 Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ---
