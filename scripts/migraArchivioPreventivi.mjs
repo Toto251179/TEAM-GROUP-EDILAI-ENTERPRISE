@@ -104,26 +104,29 @@ async function main() {
       stats.senzaOrigine.push({ numero: p.numero, cliente: `${codice} - ${nome}` });
       continue;
     }
-    const sourcePreventivi = await nomeCartella(sorgenteCliente, "Preventivi");
-    const oldPrevFolder = await trovaCartella(sourcePreventivi, `${base} - `);
+    const legacyRoot = await nomeCartella(sorgenteCliente, "Preventivi");
+    const nestedLegacyFolder = await trovaCartella(legacyRoot, `${base} - `);
+    const directFolder = await trovaCartella(sorgenteCliente, `${base} - `);
     const clientiDest = path.join(destinazione, "Clienti");
-    const clienteDest = await trovaCartella(clientiDest, `${codice} - `) || path.join(clientiDest, `${codice} - ${nome}`);
-    const preventiviDest = path.join(clienteDest, "Preventivi");
-    const quoteDest = await trovaCartella(preventiviDest, `${base} - `) || path.join(preventiviDest, `${base} - ${oggetto}`);
+    const clienteDest = await trovaCartella(clientiDest, `${codice} - `) ||
+      path.join(clientiDest, `${codice} - ${nome}`);
+    // Nessuna cartella "Preventivi" intermedia: il numero lavoro e direttamente sotto il cliente.
+    const quoteDest = await trovaCartella(clienteDest, `${base} - `) ||
+      path.join(clienteDest, `${base} - ${oggetto}`);
     const gruppi = ["Analisi dei costi", "Allegati", "Preventivi", "Consuntivi"];
-
     stats.cartelle += 1;
     if (esegui) await Promise.all(gruppi.map((d) => fs.mkdir(path.join(quoteDest, d), { recursive: true })));
 
-    // Nel vecchio archivio i PDF potevano trovarsi direttamente sotto Preventivi.
-    for (const entry of await lista(sourcePreventivi)) {
+    // Vecchio archivio "piatto": Clienti/<cliente>/Preventivi/PREV-...pdf.
+    for (const entry of await lista(legacyRoot)) {
       if (entry.isFile() && entry.name.toUpperCase().startsWith(base.toUpperCase() + "-") && /\.pdf$/i.test(entry.name)) {
-        await copiaFile(path.join(sourcePreventivi, entry.name), path.join(quoteDest, "Preventivi", entry.name));
+        await copiaFile(path.join(legacyRoot, entry.name), path.join(quoteDest, "Preventivi", entry.name));
       }
     }
 
-    if (!oldPrevFolder) continue;
-    // Gli allegati restano documenti: non si deduce automaticamente il loro contenuto.
+    // Supporta sia archivi con cartella intermedia, sia archivi gia organizzati
+    // direttamente sotto il cliente. Gli originali non vengono modificati.
+    const sourceFolders = [...new Set([nestedLegacyFolder, directFolder].filter(Boolean))];
     const mapping = {
       "analisi dei costi": "Analisi dei costi",
       "analisi costi": "Analisi dei costi",
@@ -134,15 +137,17 @@ async function main() {
       "pdf": "Preventivi",
       "consuntivi": "Consuntivi",
     };
-    for (const entry of await lista(oldPrevFolder)) {
-      const oldPath = path.join(oldPrevFolder, entry.name);
-      if (entry.isDirectory()) {
-        const destinazioneTipo = mapping[entry.name.toLowerCase()] || "Allegati";
-        const sottocartella = mapping[entry.name.toLowerCase()] ? "" : entry.name;
-        await copiaAlbero(oldPath, path.join(quoteDest, destinazioneTipo, sottocartella));
-      } else if (entry.isFile()) {
-        const tipo = /\.pdf$/i.test(entry.name) && entry.name.toUpperCase().startsWith(base.toUpperCase()) ? "Preventivi" : "Allegati";
-        await copiaFile(oldPath, path.join(quoteDest, tipo, entry.name));
+    for (const sourceFolder of sourceFolders) {
+      for (const entry of await lista(sourceFolder)) {
+        const oldPath = path.join(sourceFolder, entry.name);
+        if (entry.isDirectory()) {
+          const destinazioneTipo = mapping[entry.name.toLowerCase()] || "Allegati";
+          const sottocartella = mapping[entry.name.toLowerCase()] ? "" : entry.name;
+          await copiaAlbero(oldPath, path.join(quoteDest, destinazioneTipo, sottocartella));
+        } else if (entry.isFile()) {
+          const tipo = /\.pdf$/i.test(entry.name) && entry.name.toUpperCase().startsWith(base.toUpperCase()) ? "Preventivi" : "Allegati";
+          await copiaFile(oldPath, path.join(quoteDest, tipo, entry.name));
+        }
       }
     }
   }
