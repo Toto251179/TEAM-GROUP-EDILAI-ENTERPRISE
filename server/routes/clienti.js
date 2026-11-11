@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pool, query } from "../config/db.js";
-import { risolviRootArchivioDocumenti } from "../utils/archivioRoot.js";
+import { risolviRootArchivioDocumenti, risolviCartellaClientiArchivio } from "../utils/archivioRoot.js";
 import { createCrudRepository } from "../utils/crud.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
@@ -138,7 +138,7 @@ async function risolviCartellaCliente(cliente, { crea = false, apri = false } = 
     throw creaErroreCliente(400, "ID Cliente e ragione sociale sono obbligatori per la cartella archivio.", "id_cliente", "CLIENTE_ARCHIVIO_DATI_MANCANTI");
   }
 
-  const clientiRoot = path.join(archiveRoot, "CLIENTI");
+  const clientiRoot = await risolviCartellaClientiArchivio(archiveRoot);
   const nomeCartella = `${idClienteSafe} - ${ragioneSocialeSafe}`;
   const esistente = await trovaCartellaCliente(clientiRoot, idClienteSafe);
   const folderPath = path.join(clientiRoot, esistente || nomeCartella);
