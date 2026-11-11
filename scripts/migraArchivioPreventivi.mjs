@@ -30,8 +30,8 @@ function sicuro(value) {
 }
 function baseNumero(value) {
   const testo = String(value || "").trim();
-  const match = testo.match(/PREV-(?:\d{4}-)?\d+/i);
-  return match ? match[0].toUpperCase() : sicuro(testo.replace(/Rev[._\s-]*\d+/i, "").trim());
+  const match = testo.match(/PREV-\d+(?:[-/]\d+)?/i);
+  return match ? sicuro(match[0].toUpperCase()) : sicuro(testo.replace(/Rev[._\s-]*\d+/i, "").trim());
 }
 async function lista(folder) {
   try { return await fs.readdir(folder, { withFileTypes: true }); }
@@ -107,7 +107,7 @@ async function main() {
     const legacyRoot = await nomeCartella(sorgenteCliente, "Preventivi");
     const nestedLegacyFolder = await trovaCartella(legacyRoot, `${base} - `);
     const directFolder = await trovaCartella(sorgenteCliente, `${base} - `);
-    const clientiDest = path.join(destinazione, "Clienti");
+    const clientiDest = await nomeCartella(destinazione, "Clienti");
     const clienteDest = await trovaCartella(clientiDest, `${codice} - `) ||
       path.join(clientiDest, `${codice} - ${nome}`);
     // Nessuna cartella "Preventivi" intermedia: il numero lavoro e direttamente sotto il cliente.
