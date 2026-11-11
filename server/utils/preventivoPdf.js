@@ -44,11 +44,13 @@ function formatDate(value) {
 
 function formatNumeroPreventivo(numero) {
   const valore = String(numero || "").trim();
-  const match = valore.match(/PREV-(?:\d{4}-)?(\d+)/);
+  // Identificativi come PREV-253-26, PREV-26180 e PREV-274/26
+  // devono conservare l'intero numero del lavoro.
+  const match = valore.match(/\b(PREV-\d+(?:[-/]\d+)?)\b/i);
   if (!match) return valore;
   const revisioneTrovata = valore.match(/\bRev[._\s-]*(\d+)/i)?.[1];
   const revisione = revisioneTrovata && revisioneTrovata.length <= 2 ? revisioneTrovata : "00";
-  return `PREV-${match[1]} -Rev${String(revisione).padStart(2, "0")}`;
+  return `${match[1].toUpperCase()} -Rev${String(revisione).padStart(2, "0")}`;
 }
 
 function safeFileName(name) {
@@ -61,10 +63,10 @@ function safeFileName(name) {
 
 function parseNumeroRevisione(numero) {
   const formattato = formatNumeroPreventivo(numero);
-  const baseMatch = formattato.match(/^(PREV-\d+)/i);
+  const baseMatch = formattato.match(/^(PREV-\d+(?:[-/]\d+)?)/i);
   const revMatch = formattato.match(/\bRev[._\s-]*(\d+)/i);
   return {
-    base: baseMatch ? baseMatch[1].toUpperCase() : safeFileName(formattato.replace(/\bRev[._\s-]*\d+/i, "").trim()),
+    base: baseMatch ? safeFileName(baseMatch[1].toUpperCase()) : safeFileName(formattato.replace(/\bRev[._\s-]*\d+/i, "").trim()),
     revisione: `Rev${String(revMatch?.[1] || "00").padStart(2, "0")}`,
   };
 }
@@ -139,13 +141,7 @@ async function ensureCanonicalDirectory(parentDir, desiredName, identityPrefix) 
   return desiredPath;
 }
 
-async function ensureClienteDocumentFolders(clienteFolderPath) {
-  await Promise.all(
-    ["Cantieri", "Rapportini", "Fatture", "Consuntivi", "Allegati"].map((folderName) =>
-      ensureDir(path.join(clienteFolderPath, folderName)),
-    ),
-  );
-}
+// Le sottocartelle documentali vengono create soltanto nella cartella del lavoro.
 
 function normalizzaViaPreventivo(value) {
   if (!value) return "";
@@ -653,7 +649,6 @@ async function salvaPdfPreventivoInRadice(preventivo, clientiArchivio, rootOutpu
   const clientiRoot = path.join(rootOutputDir, "Clienti");
   const clienteFolderName = safeFileName(`${clienteCode} - ${clienteNome}`);
   const clienteFolderPath = await ensureCanonicalDirectory(clientiRoot, clienteFolderName, `${safeFileName(clienteCode)} - `);
-  await ensureClienteDocumentFolders(clienteFolderPath);
   const { folderPath, sottoCartelle } = await assicuraStrutturaPreventivo(clienteFolderPath, preventivo);
   const fileName = `${safeFileName(`${base}-${revisione}`)}.pdf`;
   const filePath = path.join(folderPath, "Preventivi", fileName);
@@ -801,7 +796,6 @@ export async function assicuraCartellaPreventiviCliente(preventivo, clientiArchi
   const clientiRoot = path.join(rootOutputDir, "Clienti");
   const clienteFolderName = safeFileName(`${clienteCode} - ${clienteNome}`);
   const clienteFolderPath = await ensureCanonicalDirectory(clientiRoot, clienteFolderName, `${safeFileName(clienteCode)} - `);
-  await ensureClienteDocumentFolders(clienteFolderPath);
   const { folderPath, sottoCartelle } = await assicuraStrutturaPreventivo(clienteFolderPath, preventivo);
 
   return {
