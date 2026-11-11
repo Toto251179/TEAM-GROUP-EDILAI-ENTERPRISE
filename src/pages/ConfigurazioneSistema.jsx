@@ -121,7 +121,7 @@ function ConfigurazioneSistema() {
           <label>Cartelle esterne aggiuntive da aggiornare automaticamente (una per riga)</label>
           <textarea
             rows={3}
-            placeholder={"Esempio: E:\\ARCHIVIO TEAMGROUP\\n\\\\SERVER\\Condivisione"}
+            placeholder="Inserisci un percorso completo per riga"
             value={(form.archiveMirrors || []).join("\n")}
             onChange={(event) => update("archiveMirrors", event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean))}
           />
