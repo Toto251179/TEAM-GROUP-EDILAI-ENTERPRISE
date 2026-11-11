@@ -1147,8 +1147,12 @@ function Preventivi() {
       }
 
       if (payload.stato === "Accettato") {
-        await api.post(`/preventivi/${salvato.id}/accetta`, {});
+        const accettazione = await api.post(`/preventivi/${salvato.id}/accetta`, {});
         await aggiornaVistaDaDatabase();
+        if (!salvato.archivioSync?.ok || !accettazione.archivioSync?.ok) {
+          setErrore(accettazione.archivioSync?.messaggio || salvato.archivioSync?.messaggio || "Preventivo accettato; archivio da verificare.");
+          return;
+        }
         window.location.href = "/cantieri";
         return;
       }
@@ -1190,8 +1194,12 @@ function Preventivi() {
 
     try {
       if (stato === "Accettato") {
-        await api.post(`/preventivi/${preventivo.id}/accetta`, {});
+        const risposta = await api.post(`/preventivi/${preventivo.id}/accetta`, {});
         await aggiornaVistaDaDatabase();
+        if (!risposta.archivioSync?.ok) {
+          setErrore(risposta.archivioSync?.messaggio || "Preventivo accettato; archivio da verificare.");
+          return;
+        }
         window.location.href = "/cantieri";
         return;
       }
@@ -1215,8 +1223,12 @@ function Preventivi() {
     setErrore("");
 
     try {
-      await api.post(`/preventivi/${preventivo.id}/accetta`, {});
+      const risposta = await api.post(`/preventivi/${preventivo.id}/accetta`, {});
       await aggiornaVistaDaDatabase();
+      if (!risposta.archivioSync?.ok) {
+        setErrore(risposta.archivioSync?.messaggio || "Preventivo accettato; archivio da verificare.");
+        return;
+      }
       window.location.href = "/cantieri";
     } catch (error) {
       setErrore(error.message);
@@ -1302,7 +1314,11 @@ function Preventivi() {
         throw new Error("Errore generazione PDF");
       }
       await apriPdfHttp(preventivo, nuovaScheda);
-      setMessaggio("PDF generato e aperto");
+      if (risposta.archivioSync?.ok) {
+        setMessaggio("PDF generato e aggiornato in tutte le cartelle esterne.");
+      } else {
+        setErrore(risposta.archivioSync?.messaggio || "PDF generato, ma alcune cartelle non sono aggiornate.");
+      }
       await aggiornaVistaDaDatabase();
     } catch (error) {
       if (nuovaScheda && !nuovaScheda.closed) nuovaScheda.close();
