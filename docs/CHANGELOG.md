@@ -1,6 +1,71 @@
 # TEAM GROUP EDILAI
 ## CHANGELOG UFFICIALE
 
+## 2026-11-11 — Correzione cartelle preventivi e archivio cliente
+
+- Non vengono più create cartelle generiche direttamente dentro `CLIENTI/<cliente>` quando si crea o si apre la cartella cliente.
+- Cartella CLIENTI riconosciuta anche con maiuscole/minuscole differenti: nessuna radice duplicata.
+- Identificativi preventivo conservati interamente (es. `PREV-253-26`, `PREV-26180`, `PREV-274/26`), allineando frontend, archivio PDF e migrazione.
+- Nuovo riordino sicuro per i PDF già presenti nelle cartelle generiche e alla radice di ogni lavoro: anteprima, backup esterno obbligatorio per esecuzione, verifica copie, blocco dei conflitti.
+- Eliminazione delle sole cartelle generiche vuote. Le cartelle contenenti file non riconosciuti restano intatte.
+- Aggiunto pulsante **Verifica archivio (senza modifiche)** e comando esplicito **Riordina con copia di sicurezza** nelle Impostazioni.
+- Test Node per nomi completi delle commesse, anteprima, spostamento con backup, conflitti e conservazione di file non associati.
+- Nessun intervento eseguito sulle cartelle reali del PC finché la nuova versione non è distribuita.
+
+---
+
+## 2026-11-11 — Storico preventivi superati
+
+- Aggiunta la sottocartella `Preventivi/Superati` in ogni lavoro.
+- Prima della sostituzione del PDF attuale, il sistema salva e verifica una copia del precedente nella cartella Superati con data, ora e codice univoco.
+- In caso di cambio revisione, i PDF delle vecchie revisioni generate automaticamente vengono spostati nello storico e non restano tra i preventivi correnti.
+- I PDF allegati manualmente non vengono toccati.
+- In caso di errore nel salvataggio dello storico, il PDF attuale non viene sostituito e la sincronizzazione viene segnalata da verificare.
+- L'impronta dei dati effettivi del preventivo, registrata in `archivio_sync`, permette di evitare falsi aggiornamenti causati dalla rigenerazione tecnica del PDF.
+- Storico replicato anche negli archivi esterni configurati. Aggiornata la migrazione per mantenere eventuali cartelle Superati.
+- Aggiunto test Node `scripts/test-pdfSuperati.mjs` (esecuzione ancora da verificare su ambiente server).
+
+---
+
+## 2026-11-11 — Sincronizzazione immediata preventivi e repliche
+
+- Al salvataggio POST o PUT, il PDF viene generato e copiato immediatamente in ogni archivio esterno configurato.
+- Aggiornati anche i percorsi di generazione PDF manuale, archiviazione manuale e accettazione del preventivo.
+- PDF rigenerato una sola volta per operazione, scrittura atomica in ogni cartella; revisione esistente aggiornata con lo stesso nome.
+- Gestione `archiveMirrors` dalle Impostazioni: copie aggiuntive con la medesima struttura per condominio e lavoro.
+- Esito dettagliato per ogni cartella nel campo `archivioSync` delle risposte API e persistito in PostgreSQL.
+- Aggiunta colonna `Archivio` nell'elenco preventivi: Sincronizzato / Da verificare / Non verificato.
+- Eliminata la seconda archiviazione PDF dopo Salva nella pagina Preventivi; esito di sincronizzazione mostrato anche in caso di errore.
+- Disponibile il recupero con `POST /api/preventivi/:id/sincronizza-archivi`.
+- Verifica statica del codice backend: sintassi valida.
+- Non eseguiti test con server Windows, database reale, copie esterne e build frontend: modifiche ancora in branch e non distribuite.
+- La sincronizzazione aggiorna i PDF e crea le sottocartelle, senza esportare automaticamente analisi costi o consuntivi che esistono soltanto nel database.
+
+---
+
+## 2026-11-11 — Correzione gerarchia cartella del lavoro (richiesta utente)
+
+- Eliminato **dalla nuova struttura** il livello intermedio `Clienti/<cliente>/Preventivi`.
+- Nuova struttura: `Clienti/<ID - Cliente>/<Numero lavoro - Oggetto>/{Analisi dei costi, Allegati, Preventivi, Consuntivi}`.
+- Adeguati generazione PDF, ricerca file precedenti, comando cartella singolo preventivo e script di migrazione.
+- Non viene piu creata la cartella `PREVENTIVI` direttamente sotto nuovi clienti. Cartelle storiche non eliminate automaticamente.
+- Migrazione fisica degli archivi e test in produzione ancora da eseguire.
+
+---
+
+## 2026-11-11 — Archivio preventivi per condominio e singolo preventivo (ramo di lavoro)
+
+- Predisposta la struttura `Clienti/<ID - Cliente>/Preventivi/<Numero preventivo - Oggetto>/{Analisi dei costi, Allegati, Preventivi, Consuntivi}`.
+- PDF delle nuove revisioni archiviati sotto la sottocartella `Preventivi` del singolo preventivo.
+- Mantenuta la ricerca dei PDF nelle cartelle storiche e nel vecchio archivio piatto.
+- Unificata la radice archivio di Clienti, Preventivi e comando Apri cartella con `archivePath` configurato.
+- Aggiunta procedura di migrazione in anteprima predefinita, copia soltanto su richiesta esplicita, senza cancellazioni e senza sovrascritture.
+- **Non eseguita migrazione effettiva su server**: la destinazione reale deve essere identificata e resa accessibile.
+- **Non eseguiti test di backend/PostgreSQL/browser/build** in ambiente operativo: richiedono installazione e dati del server.
+
+---
+
+
 Tutte le modifiche del progetto devono essere registrate in questo file.
 
 ---

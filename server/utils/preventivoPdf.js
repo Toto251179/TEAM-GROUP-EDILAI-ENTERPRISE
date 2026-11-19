@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
-import os from "node:os";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { env } from "../config/env.js";
+import { risolviRootArchivioDocumenti, risolviRadiciArchiviDocumentali, risolviCartellaClientiArchivio } from "./archivioRoot.js";
+import { pubblicaPdfConStorico } from "./pdfSuperati.js";
 import {
   getTipoRiga,
   getUnitaRiga,
@@ -40,13 +42,15 @@ function formatDate(value) {
   return new Date(value).toLocaleDateString("it-IT");
 }
 
-function formatNumeroPreventivo(numero) {
+export function formatNumeroPreventivo(numero) {
   const valore = String(numero || "").trim();
-  const match = valore.match(/PREV-(?:\d{4}-)?(\d+)/);
+  // Identificativi come PREV-253-26, PREV-26180 e PREV-274/26
+  // devono conservare l'intero numero del lavoro.
+  const match = valore.match(/\b(PREV-\d+(?:[-/]\d+)?)\b/i);
   if (!match) return valore;
   const revisioneTrovata = valore.match(/\bRev[._\s-]*(\d+)/i)?.[1];
   const revisione = revisioneTrovata && revisioneTrovata.length <= 2 ? revisioneTrovata : "00";
-  return `PREV-${match[1]} -Rev${String(revisione).padStart(2, "0")}`;
+  return `${match[1].toUpperCase()} -Rev${String(revisione).padStart(2, "0")}`;
 }
 
 function safeFileName(name) {
@@ -57,12 +61,12 @@ function safeFileName(name) {
     .replace(/[. ]+$/g, "");
 }
 
-function parseNumeroRevisione(numero) {
+export function parseNumeroRevisione(numero) {
   const formattato = formatNumeroPreventivo(numero);
-  const baseMatch = formattato.match(/^(PREV-\d+)/i);
+  const baseMatch = formattato.match(/^(PREV-\d+(?:[-/]\d+)?)/i);
   const revMatch = formattato.match(/\bRev[._\s-]*(\d+)/i);
   return {
-    base: baseMatch ? baseMatch[1].toUpperCase() : safeFileName(formattato.replace(/\bRev[._\s-]*\d+/i, "").trim()),
+    base: baseMatch ? safeFileName(baseMatch[1].toUpperCase()) : safeFileName(formattato.replace(/\bRev[._\s-]*\d+/i, "").trim()),
     revisione: `Rev${String(revMatch?.[1] || "00").padStart(2, "0")}`,
   };
 }
@@ -86,21 +90,9 @@ async function pathExists(targetPath) {
   }
 }
 
-async function resolvePreventiviOutputDir(configuredDir = env.preventivi.outputDir) {
-  const candidates = [];
-  if (configuredDir && !String(configuredDir).includes("<UTENTE>")) candidates.push(path.resolve(configuredDir));
-
-  const home = os.homedir();
-  const oneDrive = process.env.OneDrive || process.env.OneDriveCommercial || process.env.OneDriveConsumer;
-  candidates.push(path.join(home, "Desktop", "PREVENTIVI TEAM GROUP"));
-  if (oneDrive) candidates.push(path.join(oneDrive, "Desktop", "PREVENTIVI TEAM GROUP"));
-
-  const uniqueCandidates = [...new Set(candidates)];
-  for (const candidate of uniqueCandidates) {
-    if (await pathExists(candidate)) return candidate;
-  }
-
-  return uniqueCandidates[0] || path.join(home, "Desktop", "PREVENTIVI TEAM GROUP");
+async function resolvePreventiviOutputDir(configuredDir) {
+  const explicitRoot = configuredDir && configuredDir !== env.preventivi.outputDir ? configuredDir : undefined;
+  return risolviRootArchivioDocumenti({ explicitRoot });
 }
 
 async function ensureDir(dirPath) {
@@ -149,13 +141,7 @@ async function ensureCanonicalDirectory(parentDir, desiredName, identityPrefix) 
   return desiredPath;
 }
 
-async function ensureClienteDocumentFolders(clienteFolderPath) {
-  await Promise.all(
-    ["Preventivi", "Cantieri", "Rapportini", "Fatture", "Consuntivi", "Allegati"].map((folderName) =>
-      ensureDir(path.join(clienteFolderPath, folderName)),
-    ),
-  );
-}
+// Le sottocartelle documentali vengono create soltanto nella cartella del lavoro.
 
 function normalizzaViaPreventivo(value) {
   if (!value) return "";
@@ -641,33 +627,117 @@ export async function generaPdfPreventivoBuffer(preventivo, clientiArchivio = []
   return Buffer.from(doc.output("arraybuffer"));
 }
 
-export async function archiviaPdfPreventivo(preventivo, clientiArchivio = [], outputDir = env.preventivi.outputDir) {
-  const rootOutputDir = await resolvePreventiviOutputDir(outputDir);
-  await fs.mkdir(rootOutputDir, { recursive: true });
+// Cartella del lavoro direttamente dentro il cliente, senza "Preventivi" intermedio.
+async function assicuraStrutturaPreventivo(clienteFolderPath, preventivo) {
+  const { base } = parseNumeroRevisione(preventivo.numero);
+  const oggetto = safeFileName(getOggettoPreventivo(preventivo)) || "Preventivo";
+  const folderPath = await ensureCanonicalDirectory(
+    clienteFolderPath,
+    safeFileName(`${base} - ${oggetto}`),
+    `${base} - `,
+  );
+  const sottoCartelle = ["Analisi dei costi", "Allegati", "Preventivi", "Consuntivi"];
+  await Promise.all(sottoCartelle.map((nome) => ensureDir(path.join(folderPath, nome))));
+  await ensureDir(path.join(folderPath, "Preventivi", "Superati"));
+  return { folderPath, sottoCartelle };
+}
+
+async function salvaPdfPreventivoInRadice(preventivo, clientiArchivio, rootOutputDir, buffer) {
   const { base, revisione } = parseNumeroRevisione(preventivo.numero);
   const clienteNome = getClienteNome(preventivo, clientiArchivio) || "CLIENTE";
   const clienteCode = getClienteCode(preventivo, clientiArchivio) || "SENZA-ID";
-  const clientiRoot = path.join(rootOutputDir, "Clienti");
+  const clientiRoot = await risolviCartellaClientiArchivio(rootOutputDir);
   const clienteFolderName = safeFileName(`${clienteCode} - ${clienteNome}`);
   const clienteFolderPath = await ensureCanonicalDirectory(clientiRoot, clienteFolderName, `${safeFileName(clienteCode)} - `);
-  await ensureClienteDocumentFolders(clienteFolderPath);
-  const preventiviRoot = path.join(clienteFolderPath, "Preventivi");
-  await ensureDir(preventiviRoot);
-
+  const { folderPath, sottoCartelle } = await assicuraStrutturaPreventivo(clienteFolderPath, preventivo);
   const fileName = `${safeFileName(`${base}-${revisione}`)}.pdf`;
-  const filePath = path.join(preventiviRoot, fileName);
-  const buffer = await generaPdfPreventivoBuffer(preventivo, clientiArchivio);
-  await fs.writeFile(filePath, buffer);
+  const filePath = path.join(folderPath, "Preventivi", fileName);
+
+  const storico = await pubblicaPdfConStorico({ filePath, buffer, base });
   return {
-    buffer,
-    fileName,
-    filePath,
-    rootPath: rootOutputDir,
-    clientiRoot,
-    clienteFolderName: path.basename(clienteFolderPath),
-    clienteFolderPath,
-    folderName: path.basename(preventiviRoot),
-    folderPath: preventiviRoot,
+    buffer, fileName, filePath, rootPath: rootOutputDir, clientiRoot,
+    clienteFolderName: path.basename(clienteFolderPath), clienteFolderPath,
+    folderName: path.basename(folderPath), folderPath, sottoCartelle,
+    storico,
+  };
+}
+
+/** Archivia manualmente il PDF nella cartella principale; compatibile con API esistenti. */
+export async function archiviaPdfPreventivo(preventivo, clientiArchivio = [], outputDir = env.preventivi.outputDir) {
+  const rootOutputDir = await resolvePreventiviOutputDir(outputDir);
+  const buffer = await generaPdfPreventivoBuffer(preventivo, clientiArchivio);
+  return salvaPdfPreventivoInRadice(preventivo, clientiArchivio, rootOutputDir, buffer);
+}
+
+/**
+ * Impronta del contenuto effettivo del preventivo, non dei byte PDF
+ * (jsPDF può generare ID diversi per PDF identici).
+ */
+export function improntaContenutoPreventivo(preventivo, clientiArchivio = []) {
+  const righe = (Array.isArray(preventivo.righe) ? preventivo.righe : []).map((riga) => ({
+    tipoRiga: getTipoRiga(riga),
+    descrizione: riga.descrizione || "",
+    codice: riga.codice || "",
+    unita: riga.unita || "",
+    partiUguali: riga.partiUguali ?? riga.parti_uguali ?? null,
+    lunghezza: riga.lunghezza ?? null,
+    larghezza: riga.larghezza ?? null,
+    altezzaPeso: riga.altezzaPeso ?? riga.altezza_peso ?? null,
+    quantita: riga.quantita ?? null,
+    prezzoUnitario: riga.prezzoUnitario ?? null,
+    importoLordo: riga.importoLordo ?? null,
+    importo: riga.importo ?? null,
+    totale: riga.totale ?? null,
+    sconto: riga.sconto ?? null,
+    mostraSubtotaleCapitolo: Boolean(riga.mostraSubtotaleCapitolo ?? riga.mostra_subtotale_capitolo),
+  }));
+  const contenuto = {
+    numero: preventivo.numero || "",
+    data: preventivo.data || "",
+    clienteNome: getClienteNome(preventivo, clientiArchivio),
+    clienteVia: getClienteVia(preventivo, clientiArchivio),
+    clienteCode: getClienteCode(preventivo, clientiArchivio),
+    oggetto: getOggettoPreventivo(preventivo),
+    lordo: preventivo.lordo ?? null,
+    sconto: preventivo.sconto ?? null,
+    imponibile: preventivo.imponibile ?? null,
+    totale: preventivo.totale ?? null,
+    ivaAliquota: preventivo.ivaAliquota ?? preventivo.ivaPercentuale ?? null,
+    righe,
+  };
+  return createHash("sha256").update(JSON.stringify(contenuto)).digest("hex");
+}
+
+/** Archivia immediatamente in tutte le radici esplicitamente configurate. */
+export async function sincronizzaPdfPreventivoArchivi(preventivo, clientiArchivio = []) {
+  const radici = await risolviRadiciArchiviDocumentali();
+  const impronta = improntaContenutoPreventivo(preventivo, clientiArchivio);
+  let buffer;
+  // Riusa il PDF corrente quando il contenuto gestionale non è cambiato,
+  // così una nuova generazione tecnica non produce falsi "superati".
+  if (preventivo.archivioSync?.impronta === impronta) {
+    const vecchio = await trovaPdfPreventivoArchiviato(preventivo, clientiArchivio, radici[0]);
+    if (vecchio.exists) buffer = await fs.readFile(vecchio.filePath);
+  }
+  if (!buffer) buffer = await generaPdfPreventivoBuffer(preventivo, clientiArchivio);
+  const risultati = [];
+  for (const [index, root] of radici.entries()) {
+    try {
+      const archivio = await salvaPdfPreventivoInRadice(preventivo, clientiArchivio, root, buffer);
+      risultati.push({ ok: true, principale: index === 0, root, archivio });
+    } catch (error) {
+      risultati.push({
+        ok: false, principale: index === 0, root,
+        codiceErrore: error.code || "ARCHIVIO_ERRORE",
+        messaggio: error.message,
+      });
+    }
+  }
+  return {
+    ok: risultati.every((risultato) => risultato.ok),
+    principale: risultati[0],
+    impronta,
+    destinazioni: risultati,
   };
 }
 
@@ -676,55 +746,61 @@ export async function trovaPdfPreventivoArchiviato(preventivo, clientiArchivio =
   const { base, revisione } = parseNumeroRevisione(preventivo.numero);
   const clienteNome = getClienteNome(preventivo, clientiArchivio) || "CLIENTE";
   const clienteCode = getClienteCode(preventivo, clientiArchivio) || "SENZA-ID";
-  const clientiRoot = path.join(rootOutputDir, "Clienti");
+  const clientiRoot = await risolviCartellaClientiArchivio(rootOutputDir);
   const clienteFolderName =
     await findDirectoryByPrefix(clientiRoot, `${safeFileName(clienteCode)} - `) ||
     safeFileName(`${clienteCode} - ${clienteNome}`);
   const clienteFolderPath = path.join(clientiRoot, clienteFolderName);
-  const preventiviRoot = path.join(clienteFolderPath, "Preventivi");
-  const oggetto = getOggettoPreventivo(preventivo);
+  const folderName =
+    await findDirectoryByPrefix(clienteFolderPath, `${base} - `) ||
+    safeFileName(`${base} - ${getOggettoPreventivo(preventivo)}`);
+  const folderPath = path.join(clienteFolderPath, folderName);
   const fileName = `${safeFileName(`${base}-${revisione}`)}.pdf`;
-  const filePath = path.join(preventiviRoot, fileName);
+  const legacyRoot = path.join(clienteFolderPath, "Preventivi");
   const legacyFolderName =
-    await findDirectoryByPrefix(preventiviRoot, `${base} - `) ||
-    safeFileName(`${base} - ${oggetto}`);
-  const legacyFolderPath = path.join(preventiviRoot, legacyFolderName);
-  const legacyFilePath = path.join(legacyFolderPath, fileName);
-  const fileExists = await pathExists(filePath);
-  const legacyExists = !fileExists && await pathExists(legacyFilePath);
-
+    await findDirectoryByPrefix(legacyRoot, `${base} - `) ||
+    safeFileName(`${base} - ${getOggettoPreventivo(preventivo)}`);
+  const legacyFolder = path.join(legacyRoot, legacyFolderName);
+  // Prima il formato nuovo, poi quelli storici: non modificare ne eliminare gli archivi esistenti.
+  const candidates = [
+    { file: path.join(folderPath, "Preventivi", fileName), folder: folderPath },
+    { file: path.join(folderPath, "PDF", fileName), folder: folderPath },
+    { file: path.join(folderPath, fileName), folder: folderPath },
+    { file: path.join(legacyFolder, "Preventivi", fileName), folder: legacyFolder },
+    { file: path.join(legacyFolder, "PDF", fileName), folder: legacyFolder },
+    { file: path.join(legacyFolder, fileName), folder: legacyFolder },
+    { file: path.join(legacyRoot, fileName), folder: legacyRoot },
+  ];
+  let filePath = candidates[0].file;
+  let resolvedFolder = folderPath;
+  let exists = false;
+  for (const candidate of candidates) {
+    if (await pathExists(candidate.file)) {
+      filePath = candidate.file;
+      resolvedFolder = candidate.folder;
+      exists = true;
+      break;
+    }
+  }
   return {
-    fileName,
-    filePath: legacyExists ? legacyFilePath : filePath,
-    rootPath: rootOutputDir,
-    clientiRoot,
-    clienteFolderName,
-    clienteFolderPath,
-    folderName: legacyExists ? legacyFolderName : "Preventivi",
-    folderPath: legacyExists ? legacyFolderPath : preventiviRoot,
-    exists: fileExists || legacyExists,
+    fileName, filePath, rootPath: rootOutputDir, clientiRoot, clienteFolderName,
+    clienteFolderPath, folderName: path.basename(resolvedFolder),
+    folderPath: resolvedFolder, exists,
   };
 }
 
 export async function assicuraCartellaPreventiviCliente(preventivo, clientiArchivio = [], outputDir = env.preventivi.outputDir) {
   const rootOutputDir = await resolvePreventiviOutputDir(outputDir);
-  await fs.mkdir(rootOutputDir, { recursive: true });
   const clienteNome = getClienteNome(preventivo, clientiArchivio) || "CLIENTE";
   const clienteCode = getClienteCode(preventivo, clientiArchivio) || "SENZA-ID";
-  const clientiRoot = path.join(rootOutputDir, "Clienti");
+  const clientiRoot = await risolviCartellaClientiArchivio(rootOutputDir);
   const clienteFolderName = safeFileName(`${clienteCode} - ${clienteNome}`);
   const clienteFolderPath = await ensureCanonicalDirectory(clientiRoot, clienteFolderName, `${safeFileName(clienteCode)} - `);
-  await ensureClienteDocumentFolders(clienteFolderPath);
-  const preventiviRoot = path.join(clienteFolderPath, "Preventivi");
-  await ensureDir(preventiviRoot);
+  const { folderPath, sottoCartelle } = await assicuraStrutturaPreventivo(clienteFolderPath, preventivo);
 
   return {
-    rootPath: rootOutputDir,
-    clientiRoot,
-    clienteFolderName: path.basename(clienteFolderPath),
-    clienteFolderPath,
-    folderName: "Preventivi",
-    folderPath: preventiviRoot,
-    exists: await pathExists(preventiviRoot),
+    rootPath: rootOutputDir, clientiRoot, clienteFolderName: path.basename(clienteFolderPath),
+    clienteFolderPath, folderName: path.basename(folderPath), folderPath, sottoCartelle,
+    exists: await pathExists(folderPath),
   };
 }
